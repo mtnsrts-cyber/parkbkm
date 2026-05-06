@@ -1,0 +1,96 @@
+<?php
+
+use yii\helpers\Html;
+use yii\widgets\ActiveForm;
+use yii\helpers\ArrayHelper;
+use app\models\User;
+use app\models\Ekipman;
+use kartik\select2\Select2;
+
+/** @var yii\web\View $this */
+/** @var app\models\BakimTakip $model */
+/** @var yii\widgets\ActiveForm $form */
+
+// Ekipman listesini hazırla (Key ve Value aynı olsun ki veritabanına metin olarak kaydetsin)
+$ekipmanlar = ArrayHelper::map(Ekipman::find()->all(), 
+    function($model) { return $model->id . ' - ' . $model->MALZEMENIN_TANIMI; }, 
+    function($model) { return $model->id . ' - ' . $model->MALZEMENIN_TANIMI; }
+);
+
+// User tablosundan kullanıcıları çek (username -> username eşleşmesi)
+// Sadece role = 'user' veya 'editor' olanlar
+$users = ArrayHelper::map(User::find()
+    ->where(['in', 'role', ['user', 'editor']])
+    ->orderBy(['username' => SORT_ASC])
+    ->all(), 'username', 'username');
+?>
+
+<div class="bakim-takip-form">
+
+    <?php $form = ActiveForm::begin(); ?>
+
+    <div class="row">
+        <div class="col-md-6">
+            <?= $form->field($model, 'BAKIM_GENEL')->dropDownList([ 'BAKIM' => 'BAKIM', 'GENEL' => 'GENEL', ], ['prompt' => 'Seçiniz...']) ?>
+        </div>
+        <div class="col-md-6">
+            <?= $form->field($model, 'PERIYODIK_PLANLI')->dropDownList([ 'PERİYODİK' => 'PERİYODİK', 'PLANLI' => 'PLANLI', ], ['prompt' => 'Seçiniz...']) ?>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <?= $form->field($model, 'TARIH')->textInput(['type' => 'date']) ?>
+        </div>
+        <div class="col-md-6">
+            <?= $form->field($model, 'BAKIM_SURESI_SAAT')->textInput(['type' => 'number', 'step' => '0.01']) ?>
+        </div>
+    </div>
+
+    <?= $form->field($model, 'YERI')->dropDownList([
+        'HAVUZ' => 'HAVUZ',
+        'RIHTIM' => 'RIHTIM',
+        'SAHA' => 'SAHA',
+        'ATÖLYELER' => 'ATÖLYELER',
+    ], ['prompt' => 'Yer Seçiniz...']) ?>
+
+    <?php
+    // Select2 ile Arama + Serbest Giriş (Tags)
+    if (class_exists('kartik\\select2\\Select2')) {
+        echo $form->field($model, 'SISTEM_CIHAZ_OZELLIK')->widget(Select2::classname(), [
+            'data' => $ekipmanlar,
+            'options' => ['placeholder' => 'Ekipman seçiniz veya manuel yazınız...'],
+            'pluginOptions' => [
+                'allowClear' => true,
+                'tags' => true, // Listede yoksa yeni eklemeye izin ver
+            ],
+        ]);
+    } else {
+        echo $form->field($model, 'SISTEM_CIHAZ_OZELLIK')->dropDownList($ekipmanlar, ['prompt' => 'Ekipman seçiniz...']);
+    }
+    ?>
+
+    <?= $form->field($model, 'YAPILAN_IS')->textarea(['rows' => 6]) ?>
+
+    <?php 
+    // İşi Yapanlar - Select2 Çoklu Seçim
+    if (class_exists('kartik\\select2\\Select2')) {
+        echo $form->field($model, 'ISI_YAPANLAR')->widget(Select2::classname(), [
+            'data' => $users,
+            'options' => ['placeholder' => 'Personel Seçiniz...', 'multiple' => true],
+            'pluginOptions' => [
+                'allowClear' => true,
+            ],
+        ]);
+    } else {
+        echo $form->field($model, 'ISI_YAPANLAR')->dropDownList($users, ['multiple' => true, 'prompt' => 'Personel Seçiniz...']);
+    }
+    ?>
+
+    <div class="form-group mt-3">
+        <?= Html::submitButton('Kaydet', ['class' => 'btn btn-success']) ?>
+    </div>
+
+    <?php ActiveForm::end(); ?>
+
+</div>

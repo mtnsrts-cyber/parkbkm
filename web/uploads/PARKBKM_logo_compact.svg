@@ -1,0 +1,11 @@
+
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="120" rx="16" fill="#111417"/>
+  <g transform="translate(20,20) scale(1.1)">
+    <!-- Gear Icon -->
+    <path fill="#FE6B00" d="M30 8 L34 8 L36 13 L41 15 L46 12 L48 14 L46 19 L48 24 L46 26 L41 23 L36 24 L34 29 L30 29 L28 24 L23 23 L18 26 L16 24 L18 19 L16 14 L18 12 L23 15 L28 13 Z"/>
+    <circle cx="30" cy="18" r="5" fill="#111417"/>
+    <!-- PB Text -->
+    <text x="50" y="35" font-family="Arial" font-weight="700" font-size="32" fill="#FE6B00">PB</text>
+  </g>
+</svg>

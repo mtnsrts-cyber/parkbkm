@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+  <defs>
+    <style>
+      .brand-orange {
+        fill: #f26522;
+      }
+    </style>
+  </defs>
+
+  <!-- Turuncu sembol: 4 yapraklı form -->
+  <g transform="translate(-10 -6) scale(0.085)">
+    <path
+      class="brand-orange"
+      d="M 350 300 C 280 220 310 130 350 100 C 420 40 520 110 460 190 Z"
+      transform="rotate(0 340 240)"
+    />
+    <path
+      class="brand-orange"
+      d="M 350 300 C 280 220 310 130 350 100 C 420 40 520 110 460 190 Z"
+      transform="rotate(90 340 240)"
+    />
+    <path
+      class="brand-orange"
+      d="M 350 300 C 280 220 310 130 350 100 C 420 40 520 110 460 190 Z"
+      transform="rotate(180 340 240)"
+    />
+    <path
+      class="brand-orange"
+      d="M 350 300 C 280 220 310 130 350 100 C 420 40 520 110 460 190 Z"
+      transform="rotate(270 340 240)"
+    />
+  </g>
+</svg>

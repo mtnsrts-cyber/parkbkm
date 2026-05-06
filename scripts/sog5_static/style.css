@@ -1,0 +1,580 @@
+/* SOG5 Dashboard - Modern Dark Theme */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-dark: #0a0e27;
+    --bg-card: #1a1f3a;
+    --bg-header: #151a2e;
+    --border-color: #2a3150;
+    --text-primary: #e8eaf6;
+    --text-secondary: #9fa8da;
+    --text-muted: #5c6bc0;
+    --accent-primary: #00e676;
+    --accent-danger: #ff5252;
+    --accent-warning: #ffd740;
+    --accent-info: #40c4ff;
+    --voltage-color: #3f51b5;
+    --current-color: #ff6f00;
+    --power-color: #00e676;
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, var(--bg-dark) 0%, #151937 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 0;
+    margin: 0;
+}
+
+.container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header */
+.header {
+    background: var(--bg-header);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px 30px;
+    margin-bottom: 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow);
+}
+
+.header-left h1 {
+    font-size: 28px;
+    margin-bottom: 5px;
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-info) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.header-right {
+    text-align: right;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent-danger);
+    box-shadow: 0 0 10px currentColor;
+    animation: pulse 2s infinite;
+}
+
+.status-dot.online {
+    background: var(--accent-primary);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.last-update {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Main Grid */
+.main-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+/* Cards */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+.card-header {
+    background: linear-gradient(135deg, rgba(63, 81, 181, 0.2) 0%, rgba(67, 160, 71, 0.2) 100%);
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.card-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* Metric Rows */
+.metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.metric-row:last-child {
+    border-bottom: none;
+}
+
+.metric-row.total {
+    margin-top: 10px;
+    padding-top: 15px;
+    border-top: 2px solid var(--border-color);
+    font-weight: bold;
+}
+
+.metric-label {
+    color: var(--text-secondary);
+    font-size: 14px;
+    min-width: 80px;
+}
+
+.metric-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    font-family: 'Consolas', monospace;
+    text-align: right;
+    flex: 1;
+}
+
+.metric-unit {
+    color: var(--text-muted);
+    font-size: 14px;
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Kademe Grid */
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.step-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px 10px;
+    text-align: center;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.step-item.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #000;
+    font-weight: bold;
+    box-shadow: 0 0 15px var(--accent-primary);
+}
+
+.step-item:hover {
+    transform: scale(1.05);
+}
+
+.step-num {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.step-label {
+    font-size: 10px;
+    margin-top: 5px;
+    opacity: 0.7;
+}
+
+.step-info {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 10px;
+}
+
+/* Chart Cards */
+.chart-card {
+    grid-column: span 2;
+}
+
+.chart-card canvas {
+    max-height: 300px;
+}
+
+.chart-meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .chart-card {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+    }
+    
+    .header-right {
+        text-align: center;
+    }
+    
+    .main-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .metric-value {
+        font-size: 20px;
+    }
+}
+
+/* Color Variations */
+.voltage-card .card-header {
+    background: linear-gradient(135deg, rgba(63, 81, 181, 0.3) 0%, rgba(48, 63, 159, 0.3) 100%);
+}
+
+.current-card .card-header {
+    background: linear-gradient(135deg, rgba(255, 111, 0, 0.3) 0%, rgba(230, 81, 0, 0.3) 100%);
+}
+
+.power-card .card-header {
+    background: linear-gradient(135deg, rgba(0, 230, 118, 0.3) 0%, rgba(0, 200, 83, 0.3) 100%);
+}
+
+.reactive-card .card-header {
+    background: linear-gradient(135deg, rgba(156, 39, 176, 0.3) 0%, rgba(123, 31, 162, 0.3) 100%);
+}
+
+.pf-card .card-header {
+    background: linear-gradient(135deg, rgba(3, 169, 244, 0.3) 0%, rgba(2, 136, 209, 0.3) 100%);
+}
+
+.energy-card .card-header {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.3) 0%, rgba(255, 160, 0, 0.3) 100%);
+}
+
+.steps-card .card-header {
+    background: linear-gradient(135deg, rgba(233, 30, 99, 0.3) 0%, rgba(216, 27, 96, 0.3) 100%);
+}
+
+.freq-card .card-header {
+    background: linear-gradient(135deg, rgba(0, 188, 212, 0.3) 0%, rgba(0, 151, 167, 0.3) 100%);
+}
+
+.reactive-energy-card .card-header {
+    background: linear-gradient(135deg, rgba(255, 87, 34, 0.3) 0%, rgba(230, 74, 25, 0.3) 100%);
+}
+
+.capacitive-energy-card .card-header {
+    background: linear-gradient(135deg, rgba(103, 58, 183, 0.3) 0%, rgba(81, 45, 168, 0.3) 100%);
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 20px;
+}
+
+/* Loading Animation */
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+@keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+}
+
+.metric-value.loading {
+    background: linear-gradient(90deg, 
+        var(--bg-card) 0%, 
+        rgba(255, 255, 255, 0.1) 50%, 
+        var(--bg-card) 100%);
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite;
+    color: transparent;
+}
+
+/* Error State */
+.error {
+    color: var(--accent-danger) !important;
+}
+
+.warning {
+    color: var(--accent-warning) !important;
+}
+
+/* ─── Günlük Sayaç Kayıtları ───────────────────────────────────────────── */
+.daily-records-section {
+    margin: 2rem 0;
+}
+
+.daily-records-card {
+    width: 100%;
+    max-width: 100%;
+}
+
+.daily-records-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.filter-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.85rem;
+}
+
+.filter-btn:hover {
+    background: var(--bg-header);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background: var(--accent-info);
+    color: #fff;
+    border-color: var(--accent-info);
+}
+
+.table-container {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.daily-records-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.daily-records-table thead {
+    background: var(--bg-dark);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.daily-records-table th {
+    padding: 0.75rem 0.5rem;
+    text-align: left;
+    color: var(--accent-info);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.daily-records-table td {
+    padding: 0.65rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.daily-records-table tbody tr {
+    transition: background 0.2s ease;
+}
+
+.daily-records-table tbody tr:hover {
+    background: rgba(64, 196, 255, 0.05);
+}
+
+.daily-records-table .loading-message,
+.daily-records-table .no-data-message {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.daily-records-table .date-cell {
+    font-weight: 500;
+    color: var(--accent-info);
+}
+
+.daily-summary-row.selected {
+    background: rgba(64, 196, 255, 0.09);
+}
+
+.toggle-cell {
+    width: 42px;
+    text-align: center;
+}
+
+.toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--accent-info);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.hourly-detail-row {
+    display: none;
+}
+
+.hourly-detail-row.open {
+    display: table-row;
+}
+
+.hourly-detail-row td {
+    padding: 0;
+    background: rgba(10, 14, 39, 0.72);
+}
+
+.hourly-detail-box {
+    padding: 14px 18px 18px;
+}
+
+.hourly-inline-wrap {
+    overflow-x: auto;
+}
+
+.hourly-inline-table {
+    margin-top: 0;
+    font-size: 0.85rem;
+}
+
+.hourly-inline-table th,
+.hourly-inline-table td {
+    padding: 0.55rem 0.45rem;
+}
+
+.hourly-empty {
+    color: var(--text-muted);
+    padding: 12px 0;
+}
+
+.daily-records-table .number-cell {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+}
+
+.daily-records-table .positive {
+    color: var(--accent-primary);
+}
+
+.daily-records-table .ratio-cell {
+    text-align: right;
+    font-weight: 500;
+}
+
+/* Anomali satırı: veri boşluğu veya negatif değer */
+.daily-records-table .row-anomaly td {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.daily-records-table .row-anomaly .date-cell {
+    color: var(--accent-warning);
+}
+
+/* Ceza riski satırı */
+.daily-records-table .row-penalty td {
+    background: rgba(255, 82, 82, 0.06);
+}
+
+.daily-records-table .row-penalty .date-cell {
+    color: var(--accent-danger);
+}
+
+/* Ceza eşiği aşılmış oran hücresi */
+.daily-records-table .ratio-over {
+    color: var(--accent-danger);
+    font-weight: 700;
+}
+
+/* Penalty status warning */
+#penalty_status.warning {
+    color: var(--accent-warning) !important;
+}
+
+#penalty_status.error {
+    color: var(--accent-danger) !important;
+    font-weight: 700;
+}
+
+.records-info {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-dark);
+    border-radius: 4px;
+    border-left: 3px solid var(--accent-info);
+}
+
+.records-info p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .daily-records-table {
+        font-size: 0.8rem;
+    }
+    
+    .daily-records-table th,
+    .daily-records-table td {
+        padding: 0.5rem 0.3rem;
+    }
+}

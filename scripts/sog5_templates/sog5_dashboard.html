@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOG5 Güç Kontrol Rölesi - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>⚡ SMART SOG5 Güç Kontrol Rölesi</h1>
+                <p class="subtitle">Grup Arge - Canlı İzleme ve Kontrol</p>
+            </div>
+            <div class="header-right">
+                <div style="margin-bottom: 6px; text-align: right;">
+                    <a href="/register-map" style="color:#8ec5ff; text-decoration:none; font-weight:600;">Kılavuz Registerları</a>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Bağlanıyor...</span>
+                </div>
+                <div class="last-update">
+                    Son Güncelleme: <span id="lastUpdate">-</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Gerilim Kartı -->
+            <div class="card voltage-card">
+                <div class="card-header">
+                    <h2>🔌 Gerilim</h2>
+                </div>
+                <div class="card-body">
+                    <div class="voltage-section">
+                        <div class="section-title">Faz-Nötr</div>
+                        <div class="metric-row">
+                            <span class="metric-label">L1-N:</span>
+                            <span class="metric-value" id="v_l1">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">L2-N:</span>
+                            <span class="metric-value" id="v_l2">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">L3-N:</span>
+                            <span class="metric-value" id="v_l3">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                    </div>
+                    <div class="voltage-section">
+                        <div class="section-title">Faz-Faz</div>
+                        <div class="metric-row">
+                            <span class="metric-label">L1-L2:</span>
+                            <span class="metric-value" id="v_l12">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">L2-L3:</span>
+                            <span class="metric-value" id="v_l23">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">L3-L1:</span>
+                            <span class="metric-value" id="v_l31">-</span>
+                            <span class="metric-unit">V</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toplam Tüketimler Kartı -->
+            <div class="card energy-card">
+                <div class="card-header">
+                    <h2>🧾 Enerji Özeti</h2>
+                </div>
+                <div class="card-body">
+                    <div class="metric-row total" title="Sayaç üzerindeki birikimli toplam okuma">
+                        <span class="metric-label">Sayaç Okuma:</span>
+                        <span class="metric-value" id="e_total">-</span>
+                        <span class="metric-unit">kWh</span>
+                    </div>
+                    <div class="metric-row total" title="Sayaç birikimli endüktif reaktif">
+                        <span class="metric-label">Birik. Reaktif End.:</span>
+                        <span class="metric-value" id="e_reactive_ind_total">-</span>
+                        <span class="metric-unit">kVARh</span>
+                    </div>
+                    <div class="metric-row total" title="Sayaç birikimli kapasitif reaktif">
+                        <span class="metric-label">Birik. Reaktif Kap.:</span>
+                        <span class="metric-value" id="e_reactive_cap_total">-</span>
+                        <span class="metric-unit">kVARh</span>
+                    </div>
+                    <hr style="border-color:#2a2f5e; margin:6px 0;">
+                    <div class="metric-row total">
+                        <span class="metric-label">Aybaşından End./Akt.:</span>
+                        <span class="metric-value" id="mtd_ind_ratio">-</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                    <div class="metric-row total">
+                        <span class="metric-label">Aybaşından Kap./Akt.:</span>
+                        <span class="metric-value" id="mtd_cap_ratio">-</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                    <div class="metric-row total">
+                        <span class="metric-label">Dünden End./Akt.:</span>
+                        <span class="metric-value" id="day_ind_ratio">-</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                    <div class="metric-row total">
+                        <span class="metric-label">Dünden Kap./Akt.:</span>
+                        <span class="metric-value" id="day_cap_ratio">-</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                    <hr style="border-color:#2a2f5e; margin:6px 0;">
+                    <div class="metric-row total">
+                        <span class="metric-label" style="font-weight:700;">⚠ Ceza Eşiği (End≥20 / Kap≥15):</span>
+                        <span class="metric-value" id="penalty_status">-</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kademe Durumu Kartı -->
+            <div class="card steps-card">
+                <div class="card-header">
+                    <h2>🎚️ Kademe Durumları</h2>
+                </div>
+                <div class="card-body">
+                    <div class="steps-grid" id="stepsGrid">
+                        <!-- JavaScript ile doldurulacak -->
+                    </div>
+                    <div class="step-info">
+                        <small>Yeşil: Devrede | Gri: Devre Dışı</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h2>🕒 Saatlik Tüketim Grafiği</h2>
+                </div>
+                <div class="card-body">
+                    <div class="chart-meta" id="hourlyChartMeta">Bir gün seçin</div>
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Günlük Sayaç Kayıtları -->
+        <div class="daily-records-section">
+            <div class="card daily-records-card">
+                <div class="card-header">
+                    <h2>📅 Günlük Sayaç Kayıtları (Sabah 08:00)</h2>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-days="30">Son 30 Gün</button>
+                        <button class="filter-btn" data-days="60">Son 60 Gün</button>
+                        <button class="filter-btn" data-days="90">Son 90 Gün</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="daily-records-table" id="dailyRecordsTable">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Tarih</th>
+                                    <th>Sayaç (kWh)</th>
+                                    <th>Günlük Tüketim (kWh)</th>
+                                    <th>Birik. End. (kVARh)</th>
+                                    <th>Günlük End. (kVARh)</th>
+                                    <th>End./Akt. %</th>
+                                    <th>Birik. Kap. (kVARh)</th>
+                                    <th>Günlük Kap. (kVARh)</th>
+                                    <th>Kap./Akt. %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dailyRecordsBody">
+                                <tr>
+                                    <td colspan="10" class="loading-message">Veriler yükleniyor...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="records-info" id="recordsInfo">
+                        <p>Satıra tıklayınca o güne ait saatlik dağılım açılır. 2026-05-01 için Excel örneğinden üretilmiş demo veri eklendi.</p>
+                    </div>
+                    <div class="chart-meta" id="dailyTrendMeta">Günlük trend yükleniyor...</div>
+                    <canvas id="dailyTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>SMART SOG5 Dashboard v1.0 | Grup Arge | IP: 192.168.201.248 | Unit ID: 5</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
