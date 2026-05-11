@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Test</title>
+</head>
+<body>
+<h3>Test SOG5</h3>
+<div id="result">Bekleniyor...</div>
+<script>
+fetch('/basic/web/index.php?r=ekipman/sog5-veri')
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById('result').textContent = JSON.stringify(d, null, 2);
+    })
+    .catch(e => {
+        document.getElementById('result').textContent = 'Hata: ' + e.message;
+    });
+</script>
+</body>
+</html>

@@ -84,7 +84,10 @@ class SiteController extends Controller
 
     public function actionEnergy()
     {
-        return $this->render('energy');
+        $analizorler = \app\models\AnalizorCihaz::getAktifListesi();
+        return $this->render('energy', [
+            'analizorler' => $analizorler,
+        ]);
     }
     /**
      * {@inheritdoc}

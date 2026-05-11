@@ -18,6 +18,7 @@ AppAsset::register($this);
 $this->registerJs("var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle=\\'tooltip\\']'));tooltipTriggerList.forEach(function (tooltipTriggerEl) {new bootstrap.Tooltip(tooltipTriggerEl);});");
 
 $this->registerCsrfMetaTags();
+$this->registerMetaTag(['http-equiv' => 'Content-Security-Policy', 'content' => "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';"], 'http-equiv');
 $this->registerMetaTag(['charset' => Yii::$app->charset], 'charset');
 $this->registerMetaTag(['name' => 'viewport', 'content' => 'width=device-width, initial-scale=1, shrink-to-fit=no']);
 $this->registerMetaTag(['name' => 'description', 'content' => $this->params['meta_description'] ?? '']);
@@ -78,11 +79,10 @@ $navItems = [
     ['label' => 'Arıza takip', 'url' => ['/ariza-takip/index']],
     ['label' => 'P. Kontroller', 'url' => ['/site/periyodik-kontroller']],
     // ['label' => 'Atölye İş Listesi', 'url' => ['/islistesi/index']],
-    //['label' => 'Stoklar', 'url' => ['/stok/index']],
+    // ['label' => 'Stoklar', 'url' => ['/stok/index']],
     ['label' => 'Ekipmanlar', 'url' => ['/ekipman/index']],
-    //['label' => 'KPI Raporları', 'url' => ['/kpi/index']],
-    ['label' => 'Tersane Kroki', 'url' => ['/site/map']],
-];
+    ['label' => 'Enerji İzleme', 'url' => ['/site/energy']],
+    ];
 
 // Add admin menu if user is admin
 if (Yii::$app->user->identity && Yii::$app->user->identity->role === 'admin') {

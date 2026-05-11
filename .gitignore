@@ -48,3 +48,10 @@ tests/_support/_generated
 
 # Python virtual env (if any)
 /.venv
+
+# Node modules
+node_modules/
+scripts/sog5role/node_modules/
+
+# SQLite runtime db
+scripts/runtime/*.db

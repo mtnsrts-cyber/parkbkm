@@ -1,5 +1,8 @@
 <?php
 
+// Set timezone
+date_default_timezone_set('Europe/Istanbul');
+
 $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/db.php';
 
@@ -63,6 +66,7 @@ $config = [
 
 if (YII_ENV_DEV) {
     // configuration adjustments for 'dev' environment
+    /*
     if (class_exists('yii\\debug\\Module')) {
         $config['bootstrap'][] = 'debug';
         $config['modules']['debug'] = [
@@ -71,14 +75,7 @@ if (YII_ENV_DEV) {
             //'allowedIPs' => ['127.0.0.1', '::1'],
         ];
     }
-
-    if (class_exists('yii\\gii\\Module')) {
-        $config['bootstrap'][] = 'gii';
-        $config['modules']['gii'] = [
-            'class' => 'yii\\gii\\Module',
-            'allowedIPs' => ['127.0.0.1', '::1', '192.168.0.*', '78.190.136.125']
-        ];
-    }
+    */
 }
 
 return $config;

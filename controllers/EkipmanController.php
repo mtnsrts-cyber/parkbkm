@@ -8,6 +8,7 @@ use app\models\EkipmanDokuman;
 use app\models\PlanliBakim;
 use app\models\PeriyodikKontrol;
 use app\models\BakimTakip;
+use app\models\Sog5EnergyLog;
 use app\models\ArizaTakip;
 use yii\data\ArrayDataProvider;
 use yii\data\ActiveDataProvider;
@@ -30,12 +31,12 @@ class EkipmanController extends Controller
     return [
         'access' => [
             'class' => \yii\filters\AccessControl::class,
-            'only' => ['create','update','delete','hurdaya-ayir','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','enerji-kaynagi-aktar'],
+            'only' => ['create','update','delete','hurdaya-ayir','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','enerji-kaynagi-aktar','analizor-create','analizor-update','analizor-delete'],
             'rules' => [
                 [
                     'allow' => true,
                     'roles' => ['@'], // sadece login olan
-                    'actions' => ['create', 'update', 'delete'],
+                    'actions' => ['create', 'update', 'delete', 'analizor-create', 'analizor-update', 'analizor-delete'],
                 ],
                 [
                     'allow' => true,
@@ -670,40 +671,529 @@ public function actionExportPdf()
     {
         Yii::$app->response->format = Response::FORMAT_JSON;
 
-        $config = require Yii::getAlias('@app/config/analizor.php');
-        if (!isset($config[$id])) {
+        $analizor = \app\models\AnalizorCihaz::findOne(['ekipman_kodu' => $id, 'aktif' => true]);
+        if (!$analizor) {
             return ['success' => false, 'message' => 'Bu ekipman için analizör tanımı bulunamadı.'];
         }
 
-        $c = $config[$id];
         $regs = \app\helpers\ModbusHelper::readHoldingRegisters(
-            $c['ip'], $c['port'], $c['device_id'], 0, 100, 3
+            $analizor->ip, (int)$analizor->port, (int)$analizor->device_id, 0, 100, 5
         );
 
         if ($regs === false) {
-            Yii::warning("Analizör bağlantı hatası: {$c['ip']}:{$c['port']} (ekipman: {$id})", __METHOD__);
+            // 1 kez daha dene
+            $regs = \app\helpers\ModbusHelper::readHoldingRegisters(
+                $analizor->ip, (int)$analizor->port, (int)$analizor->device_id, 0, 100, 5
+            );
+        }
+
+        if ($regs === false) {
+            Yii::warning("Analizör bağlantı hatası: {$analizor->ip}:{$analizor->port} (ekipman: {$id})", __METHOD__);
             return ['success' => false, 'message' => 'Analizöre bağlanılamadı. Cihaz erişilebilir durumda olmayabilir.'];
         }
 
-        $data = \app\helpers\ModbusHelper::parseEntesMpr45($regs);
-
-        // Her okumada DB'ye kaydet (en fazla dakikada 1 kez)
-        $sonKayit = \app\models\AnalizorOlcum::find()
-            ->where(['ekipman_id' => $id])
-            ->orderBy(['id' => SORT_DESC])
-            ->one();
-        if ($sonKayit === null || (time() - strtotime($sonKayit->created_at)) >= 60) {
-            \app\models\AnalizorOlcum::kaydet($id, $data);
-        }
+$data = \app\helpers\ModbusHelper::parseEntesMpr45($regs);
 
         return [
             'success' => true,
-            'model'   => $c['model'],
+            'model'   => $analizor->model,
             'data'    => $data,
         ];
     }
 
     /**
+     * SOG5 Güç Kontrol Rölesi canlı verisini JSON olarak döndürür.
+     * AJAX ile çağrılır: GET /ekipman/sog5-veri
+     */
+    public function actionSog5Veri()
+    {
+        Yii::$app->response->format = Response::FORMAT_JSON;
+
+        $ip = '192.168.201.248';
+        $port = 502;
+        $unitId = 5;
+        $timeout = 5;
+
+        try {
+            $readU16 = function($addr) use ($ip, $port, $unitId, $timeout) {
+                $r = \app\helpers\ModbusHelper::readHoldingRegisters($ip, $port, $unitId, $addr, 1, $timeout);
+                return $r[0] ?? null;
+            };
+            $readU32 = function($addr) use ($ip, $port, $unitId, $timeout) {
+                $r = \app\helpers\ModbusHelper::readHoldingRegisters($ip, $port, $unitId, $addr, 2, $timeout);
+                if (!$r || count($r) < 2) return null;
+                $v = ($r[0] << 16) | $r[1];
+                return $v;
+            };
+            $readS32 = function($addr) use ($ip, $port, $unitId, $timeout) {
+                $r = \app\helpers\ModbusHelper::readHoldingRegisters($ip, $port, $unitId, $addr, 2, $timeout);
+                if (!$r || count($r) < 2) return null;
+                $v = ($r[0] << 16) | $r[1];
+                return $v >= 0x80000000 ? ($v - 0x100000000) : $v;
+            };
+
+            $data = [
+                'e_l1_import_kwh' => $readU32(0) / 1000,
+                'e_l2_import_kwh' => $readU32(2) / 1000,
+                'e_l3_import_kwh' => $readU32(4) / 1000,
+                'e_l1_reactive_ind_kvarh' => $readU32(12) / 1000,
+                'e_l2_reactive_ind_kvarh' => $readU32(14) / 1000,
+                'e_l3_reactive_ind_kvarh' => $readU32(16) / 1000,
+                'e_l1_reactive_cap_kvarh' => $readU32(18) / 1000,
+                'e_l2_reactive_cap_kvarh' => $readU32(20) / 1000,
+                'e_l3_reactive_cap_kvarh' => $readU32(22) / 1000,
+                'p_l1_kw' => $readS32(24) / 1000,
+                'p_l2_kw' => $readS32(26) / 1000,
+                'p_l3_kw' => $readS32(28) / 1000,
+                'q_ind_l1_kvar' => $readS32(30) / 1000,
+                'q_ind_l2_kvar' => $readS32(32) / 1000,
+                'q_ind_l3_kvar' => $readS32(34) / 1000,
+                'q_cap_l1_var' => $readS32(36) / 1000,
+                'q_cap_l2_var' => $readS32(38) / 1000,
+'q_cap_l3_var' => $readS32(40) / 1000,
+                'pf_l1' => $readU16(42) / 100,
+                'pf_l2' => $readU16(43) / 100,
+                'pf_l3' => $readU16(44) / 100,
+                'f_l1_hz' => $readU16(47) / 10,
+                'v_l1_v' => $readU16(56),
+                'v_l2_v' => $readU16(57),
+                'v_l3_v' => $readU16(58),
+                'i_l1_a' => $readU32(59) / 100,
+                'i_l2_a' => $readU32(61) / 100,
+                'i_l3_a' => $readU32(63) / 100,
+                'step_status_bits' => $readU32(73),
+            ];
+
+            $step = $data['step_status_bits'] ?? 0;
+            for ($i = 1; $i <= 12; $i++) {
+                $data['step_' . $i] = (bool)($step & (1 << ($i - 1)));
+            }
+
+            $data['v_l1_l2_v'] = isset($data['v_l1_v']) ? round($data['v_l1_v'] * 1.732) : null;
+            $data['v_l2_l3_v'] = isset($data['v_l2_v']) ? round($data['v_l2_v'] * 1.732) : null;
+            $data['v_l3_l1_v'] = isset($data['v_l3_v']) ? round($data['v_l3_v'] * 1.732) : null;
+
+            $pTotal = ($data['p_l1_kw'] ?? 0) + ($data['p_l2_kw'] ?? 0) + ($data['p_l3_kw'] ?? 0);
+            $data['p_total_kw'] = $pTotal;
+
+            $pfValues = array_filter([$data['pf_l1'] ?? null, $data['pf_l2'] ?? null, $data['pf_l3'] ?? null]);
+            $data['pf_average'] = !empty($pfValues) ? array_sum($pfValues) / count($pfValues) : null;
+
+            $indTotal = (($data['q_ind_l1_kvar'] ?? 0) + ($data['q_ind_l2_kvar'] ?? 0) + ($data['q_ind_l3_kvar'] ?? 0));
+            $capTotal = (($data['q_cap_l1_var'] ?? 0) + ($data['q_cap_l2_var'] ?? 0) + ($data['q_cap_l3_var'] ?? 0));
+            $data['compensation_inductive_kvar'] = $indTotal;
+            $data['compensation_capacitive_kvar'] = $capTotal;
+            $data['compensation_total_kvar'] = round($indTotal - $capTotal, 2);
+            
+            $data['timestamp'] = date('Y-m-d H:i:s');
+            
+            // Raw veriyi kaydet (30 saniyede bir)
+            self::logSog5Raw($data);
+            
+            self::logSog5Energy($data);
+
+            return ['success' => true, 'data' => $data];
+        } catch (\Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    private static function logSog5Energy(array $data, $force = false)
+    {
+        $now = date('Y-m-d H:00:00');
+        $lastLog = Sog5EnergyLog::find()
+            ->orderBy('log_date DESC')
+            ->one();
+
+        if (!$force && $lastLog && $lastLog->log_date === $now) {
+            return;
+        }
+
+        $log = new Sog5EnergyLog();
+        $log->log_date = $now;
+        $log->e_l1_kwh = $data['e_l1_import_kwh'] ?? null;
+        $log->e_l2_kwh = $data['e_l2_import_kwh'] ?? null;
+        $log->e_l3_kwh = $data['e_l3_import_kwh'] ?? null;
+        $log->e_total_kwh = ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0);
+        $log->q_ind_kvarh = ($data['e_l1_reactive_ind_kvarh'] ?? 0) + ($data['e_l2_reactive_ind_kvarh'] ?? 0) + ($data['e_l3_reactive_ind_kvarh'] ?? 0);
+        $log->q_cap_kvarh = ($data['e_l1_reactive_cap_kvarh'] ?? 0) + ($data['e_l2_reactive_cap_kvarh'] ?? 0) + ($data['e_l3_reactive_cap_kvarh'] ?? 0);
+        
+        $v1 = floatval($data['e_l1_reactive_ind_kvarh'] ?? 0);
+        $v2 = floatval($data['e_l2_reactive_ind_kvarh'] ?? 0);
+        $v3 = floatval($data['e_l3_reactive_ind_kvarh'] ?? 0);
+        $log->setAttribute('e_l1_reactive_ind_kvarh', $v1);
+        $log->setAttribute('e_l2_reactive_ind_kvarh', $v2);
+        $log->setAttribute('e_l3_reactive_ind_kvarh', $v3);
+        $log->setAttribute('e_l1_reactive_cap_kvarh', floatval($data['e_l1_reactive_cap_kvarh'] ?? 0));
+        $log->setAttribute('e_l2_reactive_cap_kvarh', floatval($data['e_l2_reactive_cap_kvarh'] ?? 0));
+        $log->setAttribute('e_l3_reactive_cap_kvarh', floatval($data['e_l3_reactive_cap_kvarh'] ?? 0));
+        
+        if (!$log->save()) {
+            error_log('Sog5EnergyLog save error: ' . json_encode($log->getErrors()));
+        } else {
+            error_log('Sog5EnergyLog saved id=' . $log->id . ' l1_ind=' . $v1);
+        }
+
+        $monthAgo = date('Y-m-d H:00:00', strtotime('-35 days'));
+        Sog5EnergyLog::deleteAll(['<', 'log_date', $monthAgo]);
+    }
+    
+    private static function logSog5Raw(array $data)
+    {
+        $db = \Yii::$app->db;
+        
+        // Her 30 saniyede bir kaydet
+        $second = (int)date('s');
+        if ($second < 15 || $second > 45) return;
+        
+        $datetime = date('Y-m-d H:i:00');
+        
+        // En son kayıt var mı kontrol et
+        $lastRaw = $db->createCommand('SELECT log_datetime FROM sog5_energy_logs_raw ORDER BY log_datetime DESC LIMIT 1')->queryOne();
+        if ($lastRaw && $lastRaw['log_datetime'] === $datetime) {
+            return;
+        }
+        
+        $eTotal = ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0);
+        
+        $db->createCommand()->insert('sog5_energy_logs_raw', [
+            'log_datetime' => $datetime,
+            'e_total_kwh' => $eTotal,
+            'e_l1_reactive_ind_kvarh' => $data['e_l1_reactive_ind_kvarh'] ?? 0,
+            'e_l2_reactive_ind_kvarh' => $data['e_l2_reactive_ind_kvarh'] ?? 0,
+            'e_l3_reactive_ind_kvarh' => $data['e_l3_reactive_ind_kvarh'] ?? 0,
+            'e_l1_reactive_cap_kvarh' => $data['e_l1_reactive_cap_kvarh'] ?? 0,
+            'e_l2_reactive_cap_kvarh' => $data['e_l2_reactive_cap_kvarh'] ?? 0,
+            'e_l3_reactive_cap_kvarh' => $data['e_l3_reactive_cap_kvarh'] ?? 0,
+        ])->execute();
+        
+        // Eski kayıtları temizle (son 48 saatten eskilerini sil)
+        $cleanup = date('Y-m-d H:i:00', strtotime('-48 hours'));
+        $db->createCommand('DELETE FROM sog5_energy_logs_raw WHERE log_datetime < :cleanup')->bindValue(':cleanup', $cleanup)->execute();
+    }
+
+public function actionSog5Tuketim()
+    {
+        Yii::$app->response->format = Response::FORMAT_JSON;
+        
+        $db = \Yii::$app->db;
+        
+        // Günlük hesaplama - dünkü aynı saatle kıyasla
+        $todayHour = date('Y-m-d H');
+        $yesterdayHour = date('Y-m-d H', strtotime('-24 hours'));
+        
+// Bugünkü son veri (dolu)
+        $todayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
+        
+        // Dünkü aynı saat
+        $yesterdayHour = date('Y-m-d H', strtotime('-24 hours'));
+        $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime LIKE :yesterday AND e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')
+            ->bindValue(':yesterday', $yesterdayHour . '%')->queryOne();
+        
+        // Dünkü aynı saat yoksa en son dünkü veriyi al
+        if (!$yesterdayData) {
+            $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime < :today AND e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')
+                ->bindValue(':today', date('Y-m-d'))->queryOne();
+        }
+        
+        $dailyE = null;
+        $dailyQInd = null;
+        $dailyQCap = null;
+        
+        if ($todayData && $yesterdayData && strtotime($todayData['log_datetime']) > strtotime($yesterdayData['log_datetime'])) {
+            $eDiff = ($todayData['e_total_kwh'] ?? 0) - ($yesterdayData['e_total_kwh'] ?? 0);
+            
+            $calcDiff = function($new, $old) {
+                if ($new <= 0 || $old <= 0) return 0;
+                $d = $new - $old;
+                return ($d > 0 && $d < 1000) ? $d : 0;
+            };
+            
+            $qInd1 = $calcDiff($todayData['e_l1_reactive_ind_kvarh'], $yesterdayData['e_l1_reactive_ind_kvarh']);
+            $qInd2 = $calcDiff($todayData['e_l2_reactive_ind_kvarh'], $yesterdayData['e_l2_reactive_ind_kvarh']);
+            $qInd3 = $calcDiff($todayData['e_l3_reactive_ind_kvarh'], $yesterdayData['e_l3_reactive_ind_kvarh']);
+            $qCap1 = $calcDiff($todayData['e_l1_reactive_cap_kvarh'], $yesterdayData['e_l1_reactive_cap_kvarh']);
+            $qCap2 = $calcDiff($todayData['e_l2_reactive_cap_kvarh'], $yesterdayData['e_l2_reactive_cap_kvarh']);
+            $qCap3 = $calcDiff($todayData['e_l3_reactive_cap_kvarh'], $yesterdayData['e_l3_reactive_cap_kvarh']);
+            
+            if ($eDiff > 0) $dailyE = round($eDiff, 1);
+            if ($qInd1 + $qInd2 + $qInd3 > 0) $dailyQInd = round($qInd1 + $qInd2 + $qInd3, 1);
+            if ($qCap1 + $qCap2 + $qCap3 > 0) $dailyQCap = round($qCap1 + $qCap2 + $qCap3, 1);
+        }
+        
+        // Saatlik
+        $hourAgo = date('Y-m-d H:00:00', strtotime('-1 hour'));
+        $hourLog = $db->createCommand('SELECT * FROM sog5_energy_logs WHERE log_date < :hour ORDER BY log_date DESC LIMIT 1')
+            ->bindValue(':hour', $hourAgo)->queryOne();
+        $latest = $db->createCommand('SELECT * FROM sog5_energy_logs ORDER BY log_date DESC LIMIT 1')->queryOne();
+        
+        $hourlyE = null;
+        $hourlyQInd = 0;
+        $hourlyQCap = 0;
+        
+        // Raw tablodan saatlik hesapla - son 2 dolu kayıt
+        $rawNow = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
+        $rawPrev = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 AND log_datetime < :now ORDER BY log_datetime DESC LIMIT 1')
+            ->bindValue(':now', $rawNow['log_datetime'] ?? date('Y-m-d H:i:s'))->queryOne();
+        
+        $hourlyE = null;
+        $hourlyQInd = 0;
+        $hourlyQCap = 0;
+        
+        if ($rawNow && $rawPrev) {
+            $eDiff = round(($rawNow['e_total_kwh'] ?? 0) - ($rawPrev['e_total_kwh'] ?? 0), 1);
+            if ($eDiff > 0 && $eDiff < 1000) {
+                $hourlyE = $eDiff;
+                
+                $qInd = ($rawNow['e_l1_reactive_ind_kvarh'] ?? 0) - ($rawPrev['e_l1_reactive_ind_kvarh'] ?? 0);
+                $qCap = ($rawNow['e_l1_reactive_cap_kvarh'] ?? 0) - ($rawPrev['e_l1_reactive_cap_kvarh'] ?? 0);
+                $hourlyQInd = ($qInd >= 0 && $qInd < 1000) ? round($qInd, 1) : 0;
+                $hourlyQCap = ($qCap >= 0 && $qCap < 1000) ? round($qCap, 1) : 0;
+            }
+        }
+        
+        // Oranlar
+        $calcOran = function($e, $q) {
+            return $e > 0 ? round(($q ?? 0) / $e * 100, 1) : null;
+        };
+        
+        $hourData = ['e_kwh' => $hourlyE, 'q_ind_total' => $hourlyQInd, 'q_cap_total' => $hourlyQCap,
+'q_ind_oran' => $calcOran($hourlyE, $hourlyQInd), 'q_cap_oran' => $calcOran($hourlyE, $hourlyQCap)];
+        $dailyData = ['e_kwh' => $dailyE, 'q_ind_total' => $dailyQInd, 'q_cap_total' => $dailyQCap,
+            'q_ind_oran' => $calcOran($dailyE, $dailyQInd), 'q_cap_oran' => $calcOran($dailyE, $dailyQCap)];
+        
+// Aylık - sog5_energy_logs tablosundan (bu tablo silinmiyor)
+        $monthlyE = null;
+        $monthlyQInd = 0;
+        $monthlyQCap = 0;
+        
+        $monthLogs = $db->createCommand('SELECT * FROM sog5_energy_logs ORDER BY log_date DESC LIMIT 1')->queryOne();
+        $firstOfMonth = date('Y-m-01 00:00:00');
+        
+        if ($monthLogs) {
+            // Ay başından ilk dolulu kaydı bul
+            $firstLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                WHERE log_date >= :first 
+                AND (e_l1_reactive_ind_kvarh > 0 OR e_l2_reactive_ind_kvarh > 0 OR e_l3_reactive_ind_kvarh > 0)
+                ORDER BY log_date ASC LIMIT 1')
+                ->bindValue(':first', $firstOfMonth)->queryOne();
+            
+            if ($firstLog && $monthLogs) {
+                // Aktif - toplamdan fark
+                if ($monthLogs['e_total_kwh'] > $firstLog['e_total_kwh'] && $firstLog['e_total_kwh'] > 0) {
+                    $monthlyE = round($monthLogs['e_total_kwh'] - $firstLog['e_total_kwh'], 1);
+                }
+                
+                // Reaktif Endüktif - her faz ayrı hesapla
+                $qIndL1 = 0; $qIndL2 = 0; $qIndL3 = 0;
+                if ($firstLog['e_l1_reactive_ind_kvarh'] > 0 && $monthLogs['e_l1_reactive_ind_kvarh'] > $firstLog['e_l1_reactive_ind_kvarh']) {
+                    $qIndL1 = $monthLogs['e_l1_reactive_ind_kvarh'] - $firstLog['e_l1_reactive_ind_kvarh'];
+                }
+                if ($firstLog['e_l2_reactive_ind_kvarh'] > 0 && $monthLogs['e_l2_reactive_ind_kvarh'] > $firstLog['e_l2_reactive_ind_kvarh']) {
+                    $qIndL2 = $monthLogs['e_l2_reactive_ind_kvarh'] - $firstLog['e_l2_reactive_ind_kvarh'];
+                }
+                if ($firstLog['e_l3_reactive_ind_kvarh'] > 0 && $monthLogs['e_l3_reactive_ind_kvarh'] > $firstLog['e_l3_reactive_ind_kvarh']) {
+                    $qIndL3 = $monthLogs['e_l3_reactive_ind_kvarh'] - $firstLog['e_l3_reactive_ind_kvarh'];
+                }
+                $monthlyQInd = round($qIndL1 + $qIndL2 + $qIndL3, 1);
+                
+                // Reaktif Kapasitif - her faz ayrı hesapla
+                $qCapL1 = 0; $qCapL2 = 0; $qCapL3 = 0;
+                if ($firstLog['e_l1_reactive_cap_kvarh'] > 0 && $monthLogs['e_l1_reactive_cap_kvarh'] > $firstLog['e_l1_reactive_cap_kvarh']) {
+                    $qCapL1 = $monthLogs['e_l1_reactive_cap_kvarh'] - $firstLog['e_l1_reactive_cap_kvarh'];
+                }
+                if ($firstLog['e_l2_reactive_cap_kvarh'] > 0 && $monthLogs['e_l2_reactive_cap_kvarh'] > $firstLog['e_l2_reactive_cap_kvarh']) {
+                    $qCapL2 = $monthLogs['e_l2_reactive_cap_kvarh'] - $firstLog['e_l2_reactive_cap_kvarh'];
+                }
+                if ($firstLog['e_l3_reactive_cap_kvarh'] > 0 && $monthLogs['e_l3_reactive_cap_kvarh'] > $firstLog['e_l3_reactive_cap_kvarh']) {
+                    $qCapL3 = $monthLogs['e_l3_reactive_cap_kvarh'] - $firstLog['e_l3_reactive_cap_kvarh'];
+                }
+                $monthlyQCap = round($qCapL1 + $qCapL2 + $qCapL3, 1);
+            }
+        }
+        
+        $monthlyData = ['e_kwh' => $monthlyE, 'q_ind_total' => $monthlyQInd, 'q_cap_total' => $monthlyQCap,
+            'q_ind_oran' => $calcOran($monthlyE, $monthlyQInd), 'q_cap_oran' => $calcOran($monthlyE, $monthlyQCap)];
+        
+        return ['success' => true, 'data' => [
+            'hourly' => $hourData,
+            'daily' => $dailyData,
+            'monthly' => $monthlyData,
+            'raw' => ['q_ind_total' => null, 'q_cap_total' => null]
+        ]];
+    }
+    
+    /**
+     * SOG5 grafik verileri - son 10 saatlik / günlük / aylık
+     * GET /ekipman/sog5-grafik?type=hourly|daily|monthly
+     */
+    public function actionSog5Grafik()
+    {
+        Yii::$app->response->format = Response::FORMAT_JSON;
+        
+        $type = Yii::$app->request->get('type', 'hourly');
+        $db = \Yii::$app->db;
+        
+        $labels = [];
+        $aktifData = [];
+        $qIndData = [];
+        $qCapData = [];
+        
+        if ($type === 'hourly') {
+            // Son 10 saat - sog5_energy_logs tablosundan
+            for ($i = 9; $i >= 0; $i--) {
+                $hour = date('Y-m-d H:00:00', strtotime("-{$i} hour"));
+                $hourEnd = date('Y-m-d H:59:59', strtotime("-{$i} hour"));
+                
+                $log = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 1000000
+                    ORDER BY log_date DESC LIMIT 1')
+                    ->bindValue(':start', $hour)->bindValue(':end', $hourEnd)->queryOne();
+                
+                $prevLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date < :start AND e_total_kwh > 1000000
+                    ORDER BY log_date DESC LIMIT 1')
+                    ->bindValue(':start', $hour)->queryOne();
+                
+                $labels[] = date('H:00', strtotime("-{$i} hour"));
+                
+                if ($log && $prevLog) {
+                    $e = round($log['e_total_kwh'] - $prevLog['e_total_kwh'], 1);
+                    $qind = round(($log['e_l1_reactive_ind_kvarh'] + $log['e_l2_reactive_ind_kvarh'] + $log['e_l3_reactive_ind_kvarh']) 
+                        - ($prevLog['e_l1_reactive_ind_kvarh'] + $prevLog['e_l2_reactive_ind_kvarh'] + $prevLog['e_l3_reactive_ind_kvarh']), 1);
+                    $qcap = round(($log['e_l1_reactive_cap_kvarh'] + $log['e_l2_reactive_cap_kvarh'] + $log['e_l3_reactive_cap_kvarh']) 
+                        - ($prevLog['e_l1_reactive_cap_kvarh'] + $prevLog['e_l2_reactive_cap_kvarh'] + $prevLog['e_l3_reactive_cap_kvarh']), 1);
+                    
+                    $aktifData[] = $e > 0 && $e < 1000 ? $e : 0;
+                    $qIndData[] = $qind > 0 && $qind < 500 ? $qind : 0;
+                    $qCapData[] = $qcap > 0 && $qcap < 500 ? $qcap : 0;
+                } else {
+                    $aktifData[] = 0;
+                    $qIndData[] = 0;
+                    $qCapData[] = 0;
+                }
+            }
+        } elseif ($type === 'daily') {
+            // Son 10 gün - sog5_energy_logs tablosundan ( saatlik toplama )
+            for ($i = 9; $i >= 0; $i--) {
+                $day = date('Y-m-d', strtotime("-{$i} day"));
+                $dayStart = $day . ' 00:00:00';
+                $dayEnd = $day . ' 23:59:59';
+                
+                $logs = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 1000000
+                    ORDER BY log_date ASC')
+                    ->bindValue(':start', $dayStart)->bindValue(':end', $dayEnd)->queryAll();
+                
+                $labels[] = date('d', strtotime("-{$i} day"));
+                
+                $eTotal = 0; $qIndTotal = 0; $qCapTotal = 0;
+                $prev = null;
+                foreach ($logs as $log) {
+                    if ($prev) {
+                        $e = $log['e_total_kwh'] - $prev['e_total_kwh'];
+                        if ($e > 0 && $e < 1000) $eTotal += $e;
+                        
+                        $qind = ($log['e_l1_reactive_ind_kvarh'] + $log['e_l2_reactive_ind_kvarh'] + $log['e_l3_reactive_ind_kvarh'])
+                            - ($prev['e_l1_reactive_ind_kvarh'] + $prev['e_l2_reactive_ind_kvarh'] + $prev['e_l3_reactive_ind_kvarh']);
+                        if ($qind > 0 && $qind < 500) $qIndTotal += $qind;
+                        
+                        $qcap = ($log['e_l1_reactive_cap_kvarh'] + $log['e_l2_reactive_cap_kvarh'] + $log['e_l3_reactive_cap_kvarh'])
+                            - ($prev['e_l1_reactive_cap_kvarh'] + $prev['e_l2_reactive_cap_kvarh'] + $prev['e_l3_reactive_cap_kvarh']);
+                        if ($qcap > 0 && $qcap < 500) $qCapTotal += $qcap;
+                    }
+                    $prev = $log;
+                }
+                
+                $aktifData[] = round($eTotal, 1);
+                $qIndData[] = round($qIndTotal, 1);
+                $qCapData[] = round($qCapTotal, 1);
+            }
+        } elseif ($type === 'monthly') {
+            // Son 12 ay - sog5_energy_logs tablosundan (günlük toplamaların toplamı)
+            for ($i = 11; $i >= 0; $i--) {
+                $month = date('Y-m', strtotime("-{$i} month"));
+                $monthStart = $month . '-01 00:00:00';
+                $monthEnd = $month . '-31 23:59:59';
+                
+                $firstLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date >= :start AND e_total_kwh > 1000000
+                    ORDER BY log_date ASC LIMIT 1')
+                    ->bindValue(':start', $monthStart)->queryOne();
+                
+                $lastLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date <= :end AND e_total_kwh > 1000000
+                    ORDER BY log_date DESC LIMIT 1')
+                    ->bindValue(':end', $monthEnd)->queryOne();
+                
+                $labels[] = date('M', strtotime("-{$i} month"));
+                
+                if ($firstLog && $lastLog) {
+                    $e = round($lastLog['e_total_kwh'] - $firstLog['e_total_kwh'], 1);
+                    $qind = round(($lastLog['e_l1_reactive_ind_kvarh'] + $lastLog['e_l2_reactive_ind_kvarh'] + $lastLog['e_l3_reactive_ind_kvarh'])
+                        - ($firstLog['e_l1_reactive_ind_kvarh'] + $firstLog['e_l2_reactive_ind_kvarh'] + $firstLog['e_l3_reactive_ind_kvarh']), 1);
+                    $qcap = round(($lastLog['e_l1_reactive_cap_kvarh'] + $lastLog['e_l2_reactive_cap_kvarh'] + $lastLog['e_l3_reactive_cap_kvarh'])
+                        - ($firstLog['e_l1_reactive_cap_kvarh'] + $firstLog['e_l2_reactive_cap_kvarh'] + $firstLog['e_l3_reactive_cap_kvarh']), 1);
+                    
+                    $aktifData[] = $e > 0 ? $e : 0;
+                    $qIndData[] = $qind >= 0 ? $qind : 0;
+                    $qCapData[] = $qcap >= 0 ? $qcap : 0;
+                } else {
+                    $aktifData[] = 0;
+                    $qIndData[] = 0;
+                    $qCapData[] = 0;
+                }
+            }
+        } elseif ($type === 'yearly') {
+            // Son 5 yıl - sog5_energy_logs tablosundan
+            for ($i = 4; $i >= 0; $i--) {
+                $year = date('Y', strtotime("-{$i} year"));
+                $yearStart = $year . '-01-01 00:00:00';
+                $yearEnd = $year . '-12-31 23:59:59';
+                
+                $firstLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date >= :start AND e_total_kwh > 1000000
+                    ORDER BY log_date ASC LIMIT 1')
+                    ->bindValue(':start', $yearStart)->queryOne();
+                
+                $lastLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
+                    WHERE log_date <= :end AND e_total_kwh > 1000000
+                    ORDER BY log_date DESC LIMIT 1')
+                    ->bindValue(':end', $yearEnd)->queryOne();
+                
+                $labels[] = $year;
+                
+                if ($firstLog && $lastLog) {
+                    $e = round($lastLog['e_total_kwh'] - $firstLog['e_total_kwh'], 1);
+                    $qind = round(($lastLog['e_l1_reactive_ind_kvarh'] + $lastLog['e_l2_reactive_ind_kvarh'] + $lastLog['e_l3_reactive_ind_kvarh'])
+                        - ($firstLog['e_l1_reactive_ind_kvarh'] + $firstLog['e_l2_reactive_ind_kvarh'] + $firstLog['e_l3_reactive_ind_kvarh']), 1);
+                    $qcap = round(($lastLog['e_l1_reactive_cap_kvarh'] + $lastLog['e_l2_reactive_cap_kvarh'] + $lastLog['e_l3_reactive_cap_kvarh'])
+                        - ($firstLog['e_l1_reactive_cap_kvarh'] + $firstLog['e_l2_reactive_cap_kvarh'] + $firstLog['e_l3_reactive_cap_kvarh']), 1);
+                    
+                    $aktifData[] = $e > 0 ? $e : 0;
+                    $qIndData[] = $qind >= 0 ? $qind : 0;
+                    $qCapData[] = $qcap >= 0 ? $qcap : 0;
+                } else {
+                    $aktifData[] = 0;
+                    $qIndData[] = 0;
+                    $qCapData[] = 0;
+                }
+            }
+        }
+        
+        return ['success' => true, 'data' => [
+            'labels' => $labels,
+            'aktif' => $aktifData,
+            'qind' => $qIndData,
+            'qcap' => $qCapData
+        ]];
+    }
+
+    /**
+     * Enerji analizörü geçmiş ölçüm verilerini listeler.
+     * GET /ekipman/analizor-gecmis?id=ESNT-ADP-03
+     */
+/**
      * Enerji analizörü geçmiş ölçüm verilerini listeler.
      * GET /ekipman/analizor-gecmis?id=ESNT-ADP-03
      */
@@ -885,8 +1375,19 @@ public function actionExportPdf()
      */
     public static function getAnalizorConfig(string $ekipmanId): ?array
     {
-        $config = require Yii::getAlias('@app/config/analizor.php');
-        return $config[$ekipmanId] ?? null;
+        $analizor = \app\models\AnalizorCihaz::findOne(['ekipman_kodu' => $ekipmanId, 'aktif' => true]);
+        if (!$analizor) {
+            // Geriye dönük uyum: config dosyasına da bak
+            $config = require Yii::getAlias('@app/config/analizor.php');
+            return $config[$ekipmanId] ?? null;
+        }
+        return [
+            'ip'        => $analizor->ip,
+            'port'      => (int)$analizor->port,
+            'device_id' => (int)$analizor->device_id,
+            'model'     => $analizor->model,
+            'aciklama'  => $analizor->aciklama,
+        ];
     }
 
     private function deleteTanitimFotoFile(?string $relativePath): void
@@ -905,6 +1406,54 @@ public function actionExportPdf()
         if (is_file($absolutePath)) {
             @unlink($absolutePath);
         }
+    }
+
+    /**
+     * Enerji Analizörleri yönetimi
+     */
+    public function actionAnalizorIndex()
+    {
+        $models = \app\models\AnalizorCihaz::find()->orderBy(['ekipman_kodu' => SORT_ASC])->all();
+        return $this->render('analizor_index', ['models' => $models]);
+    }
+
+    public function actionAnalizorCreate()
+    {
+        $model = new \app\models\AnalizorCihaz();
+        $model->aktif = true;
+        $model->port = 502;
+
+        if ($model->load(Yii::$app->request->post()) && $model->save()) {
+            Yii::$app->session->setFlash('success', 'Analizör eklendi.');
+            return $this->redirect(['ekipman/analizor-index']);
+        }
+
+        return $this->render('analizor_form', ['model' => $model, 'title' => 'Yeni Enerji Analizörü']);
+    }
+
+    public function actionAnalizorUpdate($id)
+    {
+        $model = \app\models\AnalizorCihaz::findOne($id);
+        if (!$model) {
+            throw new NotFoundHttpException('Analizör bulunamadı.');
+        }
+
+        if ($model->load(Yii::$app->request->post()) && $model->save()) {
+            Yii::$app->session->setFlash('success', 'Analizör güncellendi.');
+            return $this->redirect(['ekipman/analizor-index']);
+        }
+
+        return $this->render('analizor_form', ['model' => $model, 'title' => 'Analizör Düzenle']);
+    }
+
+    public function actionAnalizorDelete($id)
+    {
+        $model = \app\models\AnalizorCihaz::findOne($id);
+        if ($model) {
+            $model->delete();
+            Yii::$app->session->setFlash('success', 'Analizör silindi.');
+        }
+        return $this->redirect(['ekipman/analizor-index']);
     }
 
 }

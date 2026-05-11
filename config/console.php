@@ -1,5 +1,8 @@
 <?php
 
+// Set timezone
+date_default_timezone_set('Europe/Istanbul');
+
 $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/db.php';
 

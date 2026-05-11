@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Energy Test</title>
+<style>
+body { background: #111; color: #fff; font-family: sans-serif; padding: 20px; }
+.test { margin: 20px 0; padding: 10px; border: 1px solid #333; }
+.pass { background: #1a3; color: #fff; }
+.fail { background: #a33; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Energy Dashboard Test</h1>
+
+<div class="test" id="sog5">SOG5: <b>Bekleniyor...</b></div>
+<div class="test" id="entes">ENTES: <b>Bekleniyor...</b></div>
+<div class="test" id="tuketim">Tüketim: <b>Bekleniyor...</b></div>
+
+<script>
+function testApi(url, id) {
+    fetch(url)
+    .then(r => r.json())
+    .then(d => {
+        var el = document.getElementById(id);
+        el.className = 'test pass';
+        el.innerHTML = id + ': <b>ÇALIŞTI</b> - ' + JSON.stringify(d.success);
+        console.log(id, d);
+    })
+    .catch(e => {
+        var el = document.getElementById(id);
+        el.className = 'test fail';
+        el.innerHTML = id + ': <b>HATA</b> - ' + e.message;
+    });
+}
+testApi('/basic/web/index.php?r=ekipman/sog5-veri', 'sog5');
+testApi('/basic/web/index.php?r=ekipman/analizor-veri&id=ESNT-ADP-03', 'entes');
+testApi('/basic/web/index.php?r=ekipman/sog5-tuketim', 'tuketim');
+</script>
+</body>
+</html>
