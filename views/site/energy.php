@@ -1,237 +1,628 @@
 <?php
 /**
+ * Enerji İzleme Dashboard
+ * Sol 1/3: SOG5 Güç Kontrol Rölesi
+ * Sağ 2/3: Entes Analizör
+ *
  * @var yii\web\View $this
+ * @var array $analizorler
  */
 
+use yii\helpers\Url;
 use yii\bootstrap5\Html;
 
-$this->title = 'SOG5 Canlı Enerji İzleme';
+$this->title = 'Enerji İzleme Dashboard';
+
+$reqId = Yii::$app->request->get('id');
+if ($reqId && isset($analizorler[$reqId])) {
+    $aktifId = $reqId;
+} else {
+    $aktifId = $analizorler ? array_keys($analizorler)[0] : null;
+}
+$aktifConfig = $analizorler[$aktifId] ?? null;
 ?>
 
 <style>
-.sog5-dashboard { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #e2e8f0; }
-.sog5-dashboard header { text-align: center; padding: 10px 0 20px; border-bottom: 2px solid #334155; margin-bottom: 20px; }
-.sog5-dashboard h1 { color: #38bdf8; font-size: 26px; }
-.sog5-dashboard .status { color: #94a3b8; font-size: 14px; margin-top: 8px; }
-.sog5-dashboard .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
-.sog5-dashboard .card { background: #1e293b; border-radius: 12px; padding: 16px; border: 1px solid #334155; }
-.sog5-dashboard .card-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-.sog5-dashboard .card-title span { font-size: 18px; }
-.sog5-dashboard .metric-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; }
-.sog5-dashboard .metric-row:last-child { border-bottom: none; }
-.sog5-dashboard .metric-label { color: #cbd5e1; font-size: 14px; }
-.sog5-dashboard .metric-value { font-size: 18px; font-weight: 600; }
-.sog5-dashboard .metric-unit { font-size: 12px; color: #94a3b8; margin-left: 4px; }
-.sog5-dashboard .total-row { background: #0f172a; border-radius: 8px; padding: 10px; margin-top: 10px; }
-.sog5-dashboard .total-row .metric-value { font-size: 22px; color: #38bdf8; }
-.sog5-dashboard .disconnected { color: #ef4444; }
-.sog5-dashboard .connected { color: #22c55e; }
-.badge-green { color: #22c55e; }
-.badge-yellow { color: #eab308; }
-.badge-red { color: #ef4444; }
-.badge-blue { color: #3b82f6; }
-.badge-purple { color: #a855f7; }
-.badge-orange { color: #f97316; }
+.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; }
+.sog5-panel h5 { color:#e94560; margin-bottom:16px; font-size:16px; }
+.sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:12px; margin-bottom:12px; }
+.sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #2d3348; }
+.sog5-step-row:last-child { border-bottom:none; }
+.sog5-step-dot { width:12px; height:12px; border-radius:50%; display:inline-block; margin-right:6px; }
+.sog5-dot-on { background:#22c55e; box-shadow:0 0 6px #22c55e; }
+.sog5-dot-off { background:#374151; }
+.sog5-steps-horizontal { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+.sog5-step-item { text-align:center; min-width:48px; }
+.sog5-step-item .sog5-step-dot { width:16px; height:16px; margin:0 auto 4px; }
+.sog5-step-item .step-num { font-size:10px; color:#9ca3af; }
+.sog5-power-bar { display:flex; align-items:center; gap:8px; margin:6px 0; flex-wrap:wrap; }
+.sog5-power-bar-label { width:70px; font-size:12px; color:#9ca3af; flex-shrink:0; }
+.sog5-power-bar-track { flex:1; min-width:100px; height:14px; background:#2d3348; border-radius:4px; overflow:hidden; position:relative; }
+.sog5-power-bar-fill { height:100%; border-radius:4px; transition:width 0.5s ease; }
+.sog5-bar-p { background:#22c55e; }
+.sog5-bar-qind { background:#f59e0b; }
+.sog5-bar-qcap { background:#06b6d4; }
+.sog5-power-bar-value { min-width:60px; text-align:right; font-size:12px; font-weight:bold; }
+.energy-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; }
 </style>
 
-<div class="sog5-dashboard">
-  <div class="container-fluid">
-    <header>
-      <h1>Smart SOG5 SGA124 — Canlı Enerji İzleme</h1>
-      <div class="status" id="sog5-status">Bağlantı kuruluyor...</div>
-      <div class="status" id="sog5-lastUpdate"></div>
-    </header>
+<div class="container-fluid mt-3">
+    <h4 class="mb-3" style="color:#38bdf8; border-bottom:2px solid #334155; padding-bottom:10px;">
+        ⚡ Enerji İzleme Dashboard
+    </h4>
+    <div class="row">
+        <!-- SOG5 - SOL 1/3 -->
+        <div class="col-lg-4 mb-3">
+            <div class="sog5-panel">
+                <h5>🔧 SOG5 Güç Kontrol Rölesi</h5>
+                
+                <!-- Bağlantı Durumu -->
+                <div class="sog5-status-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Bağlantı Durumu</span>
+                        <span class="badge" id="sog5-status-badge" style="background:#6c757d; color:#fff">Bekleniyor...</span>
+                    </div>
+                    <div class="text-muted small" id="sog5-last-update">--:--:--</div>
+                </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="card-title"><span>⚡</span> Gerilim (V)</div>
-        <div class="metric-row"><span class="metric-label">L1-N</span><span><span class="metric-value badge-green" id="v_L1">---</span><span class="metric-unit">V</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2-N</span><span><span class="metric-value badge-green" id="v_L2">---</span><span class="metric-unit">V</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3-N</span><span><span class="metric-value badge-green" id="v_L3">---</span><span class="metric-unit">V</span></span></div>
-        <div class="metric-row"><span class="metric-label">L1-L2</span><span><span class="metric-value badge-yellow" id="v_L1L2">---</span><span class="metric-unit">V</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2-L3</span><span><span class="metric-value badge-yellow" id="v_L2L3">---</span><span class="metric-unit">V</span></span></div>
-        <div class="metric-row"><span class="metric-label">L1-L3</span><span><span class="metric-value badge-yellow" id="v_L1L3">---</span><span class="metric-unit">V</span></span></div>
-      </div>
+                <!-- QBilgi -->
+                <div class="sog5-status-card">
+                    <div class="text-muted small mb-2"><strong>QBilgi</strong></div>
+                    <div class="sog5-power-bar">
+                        <span class="sog5-power-bar-label">P (Aktif)</span>
+                        <div class="sog5-power-bar-track"><div class="sog5-power-bar-fill sog5-bar-p" id="sog5-bar-p" style="width:0%"></div></div>
+                        <span class="sog5-power-bar-value text-success" id="sog5-p-val">---</span>
+                    </div>
+                    <div class="sog5-power-bar">
+                        <span class="sog5-power-bar-label">Q (Endük.)</span>
+                        <div class="sog5-power-bar-track"><div class="sog5-power-bar-fill sog5-bar-qind" id="sog5-bar-qind" style="width:0%"></div></div>
+                        <span class="sog5-power-bar-value text-warning" id="sog5-qind-val">---</span>
+                        <span class="small text-muted ms-1" id="sog5-qind-pct">---</span>
+                    </div>
+                    <div class="sog5-power-bar">
+                        <span class="sog5-power-bar-label">Q (Kapas.)</span>
+                        <div class="sog5-power-bar-track"><div class="sog5-power-bar-fill sog5-bar-qcap" id="sog5-bar-qcap" style="width:0%"></div></div>
+                        <span class="sog5-power-bar-value text-info" id="sog5-qcap-val">---</span>
+                        <span class="small text-muted ms-1" id="sog5-qcap-pct">---</span>
+                    </div>
+                    <div class="sog5-step-row mt-2">
+                        <span class="text-muted small">Cos φ</span>
+                        <span class="font-weight-bold text-info" id="sog5-cosfi">---</span>
+                    </div>
+                    <div class="sog5-step-row">
+                        <span class="text-muted small">Frekans</span>
+                        <span class="font-weight-bold" id="sog5-freq">---</span>
+                    </div>
+                </div>
 
-      <div class="card">
-        <div class="card-title"><span>🔌</span> Akım (A)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-blue" id="c_L1">---</span><span class="metric-unit">A</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-blue" id="c_L2">---</span><span class="metric-unit">A</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-blue" id="c_L3">---</span><span class="metric-unit">A</span></span></div>
-      </div>
+                <!-- Enerji Sayaçları -->
+                <div class="sog5-status-card">
+                    <div class="text-muted small mb-3"><strong>Enerji Sayaçları</strong></div>
+                    
+                    <!-- Aktif Tüketim -->
+                    <div class="energy-card mb-3" style="border-left: 4px solid #22c55e;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="small text-muted">Aktif Tüketim</div>
+                            <div class="badge bg-success rounded-pill">kWh</div>
+                        </div>
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="text-muted small">Saatlik</div>
+                                <div class="h5 mb-0" id="sog5-e-hourly">---</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Günlük</div>
+                                <div class="h5 mb-0" id="sog5-e-daily">---</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Aylık</div>
+                                <div class="h5 mb-0 text-muted" id="sog5-e-monthly">---</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Reaktif Endüktif -->
+                    <div class="energy-card mb-3" style="border-left: 4px solid #f59e0b;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="small text-muted">Reaktif Endüktif</div>
+                            <div class="badge bg-warning text-dark rounded-pill">kVArh</div>
+                        </div>
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="text-muted small">Saatlik</div>
+                                <div class="h6 mb-0" id="sog5-qind-hourly">---</div>
+                                <div class="small text-muted" id="sog5-qind-oran-hourly"></div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Günlük</div>
+                                <div class="h6 mb-0" id="sog5-qind-daily">---</div>
+                                <div class="small text-muted" id="sog5-qind-oran-daily"></div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Aylık</div>
+                                <div class="h6 mb-0 text-muted" id="sog5-qind-monthly">---</div>
+                                <div class="small text-muted" id="sog5-qind-oran-monthly"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Reaktif Kapasitif -->
+                    <div class="energy-card" style="border-left: 4px solid #06b6d4;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="small text-muted">Reaktif Kapasitif</div>
+                            <div class="badge bg-info rounded-pill">kVArh</div>
+                        </div>
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="text-muted small">Saatlik</div>
+                                <div class="h6 mb-0" id="sog5-qcap-hourly">---</div>
+                                <div class="small text-muted" id="sog5-qcap-oran-hourly"></div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Günlük</div>
+                                <div class="h6 mb-0" id="sog5-qcap-daily">---</div>
+                                <div class="small text-muted" id="sog5-qcap-oran-daily"></div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">Aylık</div>
+                                <div class="h6 mb-0 text-muted" id="sog5-qcap-monthly">---</div>
+                                <div class="small text-muted" id="sog5-qcap-oran-monthly"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Grafik Kartı -->
+                <div class="sog5-status-card mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="text-muted small"><strong>Tüketim Grafiği</strong></div>
+                        <div class="d-flex gap-2" style="font-size:10px;">
+                            <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;"></span> Aktif</span>
+                            <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> Endüktif</span>
+                            <span><span style="display:inline-block;width:10px;height:10px;background:#06b6d4;border-radius:2px;"></span> Kapasitif</span>
+                        </div>
+                    </div>
+                    <ul class="nav nav-tabs mb-2" id="chartTab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active small py-1 px-2" id="chart-hourly-tab" data-bs-toggle="tab" data-bs-target="#chart-hourly-pane" type="button" role="tab">Saatlik</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link small py-1 px-2" id="chart-daily-tab" data-bs-toggle="tab" data-bs-target="#chart-daily-pane" type="button" role="tab">Günlük</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link small py-1 px-2" id="chart-monthly-tab" data-bs-toggle="tab" data-bs-target="#chart-monthly-pane" type="button" role="tab">Aylık</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="chartTabContent">
+                        <div class="tab-pane fade show active" id="chart-hourly-pane" role="tabpanel">
+                            <div id="chart-hourly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="chart-daily-pane" role="tabpanel">
+                            <div id="chart-daily-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="chart-monthly-pane" role="tabpanel">
+                            <div id="chart-monthly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-      <div class="card">
-        <div class="card-title"><span>🔄</span> Frekans (Hz)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-purple" id="f_L1">---</span><span class="metric-unit">Hz</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-purple" id="f_L2">---</span><span class="metric-unit">Hz</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-purple" id="f_L3">---</span><span class="metric-unit">Hz</span></span></div>
-      </div>
+                <!-- Gerilim -->
+                <div class="sog5-status-card">
+                    <div class="text-muted small mb-2"><strong>Gerilim</strong></div>
+                    <div class="row">
+                        <div class="col-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr><td class="text-muted">V L1-N</td><td class="text-right font-weight-bold" id="sog5-v-l1n">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L2-N</td><td class="text-right font-weight-bold" id="sog5-v-l2n">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L3-N</td><td class="text-right font-weight-bold" id="sog5-v-l3n">---</td><td class="text-muted">V</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr><td class="text-muted">V L1-L2</td><td class="text-right font-weight-bold" id="sog5-v-l1l2">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L2-L3</td><td class="text-right font-weight-bold" id="sog5-v-l2l3">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L3-L1</td><td class="text-right font-weight-bold" id="sog5-v-l3l1">---</td><td class="text-muted">V</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
 
-      <div class="card">
-        <div class="card-title"><span>💡</span> Aktif Güç (kW)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-green" id="ap_L1">---</span><span class="metric-unit">kW</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-green" id="ap_L2">---</span><span class="metric-unit">kW</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-green" id="ap_L3">---</span><span class="metric-unit">kW</span></span></div>
-        <div class="total-row metric-row"><span class="metric-label"><b>TOPLAM</b></span><span><span class="metric-value" id="ap_Total">---</span><span class="metric-unit">kW</span></span></div>
-      </div>
+                <!-- Kademe Durumları -->
+                <div class="sog5-status-card">
+                    <div class="text-muted small mb-2 text-center"><strong>Kademe Durumları</strong></div>
+                    <div id="sog5-steps" class="sog5-steps-horizontal">
+                        <?php for ($i = 1; $i <= 12; $i++): ?>
+                        <div class="sog5-step-item">
+                            <span class="sog5-step-dot sog5-dot-off" id="step-dot-<?= $i ?>"></span>
+                            <div class="step-num">K<?= $i ?></div>
+                        </div>
+                        <?php endfor; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-      <div class="card">
-        <div class="card-title"><span>🔋</span> İndüktif Güç (kVAr)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-yellow" id="ip_L1">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-yellow" id="ip_L2">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-yellow" id="ip_L3">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="total-row metric-row"><span class="metric-label"><b>TOPLAM</b></span><span><span class="metric-value" id="ip_Total">---</span><span class="metric-unit">kVAr</span></span></div>
-      </div>
+        <!-- ENTES - SAĞ 2/3 -->
+        <div class="col-lg-8">
+            <!-- Analizör Seçici -->
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+                <select class="form-select form-select-sm w-auto" onchange="window.location.href='<?= Url::to(['site/energy']) ?>&id='+this.value">
+                    <option value="">-- Analizör Seç --</option>
+                    <?php foreach ($analizorler as $id => $cfg): ?>
+                        <option value="<?= Html::encode($id) ?>" <?= $id === $aktifId ? 'selected' : '' ?>><?= Html::encode($id) ?> - <?= Html::encode($cfg['model'] ?? '-') ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (Yii::$app->user->identity && Yii::$app->user->identity->role === 'admin'): ?>
+                    <a href="<?= Url::to(['ekipman/analizor-index']) ?>" class="btn btn-sm btn-outline-warning">⚙ Yönet</a>
+                <?php endif; ?>
+            </div>
 
-      <div class="card">
-        <div class="card-title"><span>⚡</span> Kapasitif Güç (kVAr)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-purple" id="cp_L1">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-purple" id="cp_L2">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-purple" id="cp_L3">---</span><span class="metric-unit">kVAr</span></span></div>
-        <div class="total-row metric-row"><span class="metric-label"><b>TOPLAM</b></span><span><span class="metric-value" id="cp_Total">---</span><span class="metric-unit">kVAr</span></span></div>
-      </div>
+            <?php if (!$aktifConfig): ?>
+                <div class="alert alert-warning">Lütfen bir analizör seçiniz.</div>
+            <?php else: ?>
+                <!-- Başlık -->
+                <div class="d-flex align-items-center mb-3">
+                    <h5 class="mb-0" style="color:#e94560">⚡ Enerji Analizörü - ENTES MPR-45S-V2</h5>
+                    <span class="ml-3 badge" id="analizorStatus" style="font-size:0.9em; background:#6c757d; color:#fff">Bekleniyor...</span>
+                    <span class="ml-2 text-muted small" id="analizorTime"></span>
+                </div>
+                <div class="text-muted small mb-2">
+                    IP: <?= Html::encode($aktifConfig['ip']) ?>:<?= Html::encode($aktifConfig['port']) ?>
+                    | Device ID: <?= Html::encode($aktifConfig['device_id']) ?>
+                    | <?= Html::encode($aktifConfig['aciklama']) ?>
+                </div>
 
-      <div class="card">
-        <div class="card-title"><span>📐</span> Cos φ</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-green" id="cos_L1">---</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-green" id="cos_L2">---</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-green" id="cos_L3">---</span></span></div>
-      </div>
+                <!-- Kartlar -->
+                <div class="row" id="analizorCards">
+                    <!-- Gerilim -->
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-primary">
+                            <div class="card-header bg-primary text-white py-2"><strong>GERİLİM</strong></div>
+                            <div class="card-body p-2">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr><td class="text-muted">V L1-N</td><td class="text-right font-weight-bold" id="az_V_L1N">---</td><td class="text-muted">V</td></tr>
+                                    <tr><td class="text-muted">V L2-N</td><td class="text-right font-weight-bold" id="az_V_L2N">---</td><td class="text-muted">V</td></tr>
+                                    <tr><td class="text-muted">V L3-N</td><td class="text-right font-weight-bold" id="az_V_L3N">---</td><td class="text-muted">V</td></tr>
+                                    <tr class="border-top"><td class="text-muted">V L1-L2</td><td class="text-right font-weight-bold" id="az_V_L1L2">---</td><td class="text-muted">V</td></tr>
+                                    <tr><td class="text-muted">V L2-L3</td><td class="text-right font-weight-bold" id="az_V_L2L3">---</td><td class="text-muted">V</td></tr>
+                                    <tr><td class="text-muted">V L3-L1</td><td class="text-right font-weight-bold" id="az_V_L3L1">---</td><td class="text-muted">V</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Güç -->
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-success">
+                            <div class="card-header bg-success text-white py-2"><strong>GÜÇ</strong></div>
+                            <div class="card-body p-2">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr><td class="text-muted">P L1</td><td class="text-right font-weight-bold" id="az_P_L1">---</td><td class="text-muted">kW</td></tr>
+                                    <tr><td class="text-muted">P L2</td><td class="text-right font-weight-bold" id="az_P_L2">---</td><td class="text-muted">kW</td></tr>
+                                    <tr><td class="text-muted">P L3</td><td class="text-right font-weight-bold" id="az_P_L3">---</td><td class="text-muted">kW</td></tr>
+                                    <tr class="border-top"><td class="text-muted"><strong>P Toplam</strong></td><td class="text-right font-weight-bold text-success" id="az_P_total_kW" style="font-size:1.2em">---</td><td class="text-muted">kW</td></tr>
+                                    <tr><td class="text-muted">S Toplam</td><td class="text-right font-weight-bold" id="az_S_total_kVA">---</td><td class="text-muted">kVA</td></tr>
+                                    <tr><td class="text-muted">Q Toplam</td><td class="text-right font-weight-bold" id="az_Q_total_kVAR">---</td><td class="text-muted">kVAR</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Diğer -->
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-info">
+                            <div class="card-header bg-info text-white py-2"><strong>DİĞER</strong></div>
+                            <div class="card-body p-2">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr><td class="text-muted">Frekans</td><td class="text-right font-weight-bold" id="az_Freq">---</td><td class="text-muted">Hz</td></tr>
+                                    <tr><td class="text-muted">I Ortalama</td><td class="text-right font-weight-bold" id="az_I_avg_A">---</td><td class="text-muted">A</td></tr>
+                                    <tr><td class="text-muted">I Nötr</td><td class="text-right font-weight-bold" id="az_I_N">---</td><td class="text-muted">mA</td></tr>
+                                    <tr class="border-top"><td class="text-muted">PF L1</td><td class="text-right font-weight-bold" id="az_PF_L1">---</td><td></td></tr>
+                                    <tr><td class="text-muted">PF L2</td><td class="text-right font-weight-bold" id="az_PF_L2">---</td><td></td></tr>
+                                    <tr><td class="text-muted">PF L3</td><td class="text-right font-weight-bold" id="az_PF_L3">---</td><td></td></tr>
+                                    <tr><td class="text-muted"><strong>PF Ort.</strong></td><td class="text-right font-weight-bold text-info" id="az_PF_avg" style="font-size:1.2em">---</td><td></td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-      <div class="card">
-        <div class="card-title"><span>⚠️</span> THDI (%)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-orange" id="thdi_L1">---</span><span class="metric-unit">%</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-orange" id="thdi_L2">---</span><span class="metric-unit">%</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-orange" id="thdi_L3">---</span><span class="metric-unit">%</span></span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><span>📊</span> Aktif Enerji (kWh)</div>
-        <div class="metric-row"><span class="metric-label">L1</span><span><span class="metric-value badge-blue" id="ae_L1">---</span><span class="metric-unit">kWh</span></span></div>
-        <div class="metric-row"><span class="metric-label">L2</span><span><span class="metric-value badge-blue" id="ae_L2">---</span><span class="metric-unit">kWh</span></span></div>
-        <div class="metric-row"><span class="metric-label">L3</span><span><span class="metric-value badge-blue" id="ae_L3">---</span><span class="metric-unit">kWh</span></span></div>
-        <div class="total-row metric-row"><span class="metric-label"><b>TOPLAM</b></span><span><span class="metric-value" id="ae_Total">---</span><span class="metric-unit">kWh</span></span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><span>🔁</span> Reaktif Enerji (kVArh)</div>
-        <div class="metric-row"><span class="metric-label">İndüktif</span><span><span class="metric-value badge-yellow" id="re_ind">---</span><span class="metric-unit">kVArh</span></span></div>
-        <div class="metric-row"><span class="metric-label">Kapasitif</span><span><span class="metric-value badge-purple" id="re_cap">---</span><span class="metric-unit">kVArh</span></span></div>
-      </div>
+                <!-- Enerji Sayacı -->
+                <div class="row">
+                    <div class="col-md-10 mb-3">
+                        <div class="card border-warning">
+                            <div class="card-header bg-warning text-dark py-2"><strong>⚡ ENERJİ SAYACI</strong></div>
+                            <div class="card-body p-2">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr><td class="text-muted"><strong>Toplam Tüketim</strong></td><td class="text-right font-weight-bold text-warning" id="az_E_import_total_kWh" style="font-size:1.3em">---</td><td class="text-muted">kWh</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
     </div>
-
-    <div class="text-center pb-4 text-muted small">
-      Smart SOG5 SGA124 | Modbus TCP | Node.js Portable | Grup Arge
-    </div>
-  </div>
 </div>
 
 <script>
-  const statusEl = document.getElementById('sog5-status');
-  const lastUpdateEl = document.getElementById('sog5-lastUpdate');
+var sog5Polling = false;
+var sog5Timer = null;
+var sog5Interval = 30000;
+var sog5ApiUrl = '/basic/web/index.php?r=ekipman/sog5-veri';
 
-  function calcLineVoltage(a, b) {
-    if (a === null || b === null) return null;
-    return Math.sqrt(a*a + b*b + a*b).toFixed(1);
-  }
+var analizorPolling = false;
+var analizorTimer = null;
+var pollInterval = 30000;
+var currentId = <?= json_encode($aktifId) ?>;
+var analizorApiUrl = '/basic/web/index.php?r=ekipman/analizor-veri&id=' + encodeURIComponent(currentId);
 
-  function updateValue(id, val, decimals = 2) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (val === null || val === undefined) { el.textContent = '---'; return; }
-    el.textContent = typeof val === 'number' ? val.toFixed(decimals) : val;
-  }
+var tuketimPolling = false;
+var tuketimTimer = null;
 
-  function onData(d) {
-    statusEl.textContent = 'Canlı veri alınıyor';
-    statusEl.className = 'status connected';
-    lastUpdateEl.textContent = new Date(d.timestamp).toLocaleString('tr-TR');
+window.sog5Poll = function() {
+    if (!sog5Polling) return;
+    document.getElementById('sog5-status-badge').style.background = '#ffc107';
+    document.getElementById('sog5-status-badge').textContent = 'Okunuyor...';
 
-    const v = d.voltage || {};
-    updateValue('v_L1', v.L1, 1);
-    updateValue('v_L2', v.L2, 1);
-    updateValue('v_L3', v.L3, 1);
-    updateValue('v_L1L2', calcLineVoltage(v.L1, v.L2), 1);
-    updateValue('v_L2L3', calcLineVoltage(v.L2, v.L3), 1);
-    updateValue('v_L1L3', calcLineVoltage(v.L1, v.L3), 1);
+    fetch(sog5ApiUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(json) {
+            if (!sog5Polling) return;
+            if (!json.success) {
+                document.getElementById('sog5-status-badge').style.background = '#dc3545';
+                document.getElementById('sog5-status-badge').textContent = 'Hata';
+                sog5Timer = setTimeout(sog5Poll, sog5Interval * 2);
+                return;
+            }
 
-    const c = d.current || {};
-    updateValue('c_L1', c.L1, 2);
-    updateValue('c_L2', c.L2, 2);
-    updateValue('c_L3', c.L3, 2);
+            var d = json.data;
+            document.getElementById('sog5-status-badge').style.background = '#28a745';
+            document.getElementById('sog5-status-badge').textContent = 'Bağlı';
+            document.getElementById('sog5-last-update').textContent = d.timestamp || new Date().toLocaleTimeString('tr-TR');
 
-    const f = d.frequency || {};
-    updateValue('f_L1', f.L1, 1);
-    updateValue('f_L2', f.L2, 1);
-    updateValue('f_L3', f.L3, 1);
+            for (var i = 1; i <= 12; i++) {
+                var on = d['step_' + i] === true || d['step_' + i] === 1;
+                var dot = document.getElementById('step-dot-' + i);
+                if (dot) dot.className = 'sog5-step-dot ' + (on ? 'sog5-dot-on' : 'sog5-dot-off');
+            }
 
-    const ap = d.active_power || {};
-    updateValue('ap_L1', ap.L1);
-    updateValue('ap_L2', ap.L2);
-    updateValue('ap_L3', ap.L3);
-    updateValue('ap_Total', ap.Total);
+            var maxP = 500;
+            var maxQ = 50;
+            var p = 0;
+            if (d.p_total_kw !== null && d.p_total_kw !== undefined) {
+                p = parseFloat(d.p_total_kw);
+                document.getElementById('sog5-bar-p').style.width = Math.min(100, p / maxP * 100) + '%';
+                document.getElementById('sog5-p-val').textContent = p.toFixed(1) + ' kW';
+            }
+            if (d.compensation_inductive_kvar !== null) {
+                var qind = parseFloat(d.compensation_inductive_kvar);
+                document.getElementById('sog5-bar-qind').style.width = Math.min(100, qind / maxQ * 100) + '%';
+                document.getElementById('sog5-qind-val').textContent = qind.toFixed(1) + ' kVAr';
+                document.getElementById('sog5-qind-pct').textContent = (p > 0 ? (qind / p * 100).toFixed(1) : '0.0') + '%P';
+            }
+            if (d.compensation_capacitive_kvar !== null) {
+                var qcap = parseFloat(d.compensation_capacitive_kvar);
+                document.getElementById('sog5-bar-qcap').style.width = Math.min(100, qcap / maxQ * 100) + '%';
+                document.getElementById('sog5-qcap-val').textContent = qcap.toFixed(1) + ' kVAr';
+                document.getElementById('sog5-qcap-pct').textContent = (p > 0 ? (qcap / p * 100).toFixed(1) : '0.0') + '%P';
+            }
+            if (d.v_l1_v !== null) document.getElementById('sog5-v-l1n').textContent = parseFloat(d.v_l1_v).toFixed(1);
+            if (d.v_l2_v !== null) document.getElementById('sog5-v-l2n').textContent = parseFloat(d.v_l2_v).toFixed(1);
+            if (d.v_l3_v !== null) document.getElementById('sog5-v-l3n').textContent = parseFloat(d.v_l3_v).toFixed(1);
+            if (d.v_l1_l2_v !== null) document.getElementById('sog5-v-l1l2').textContent = parseFloat(d.v_l1_l2_v).toFixed(1);
+            if (d.v_l2_l3_v !== null) document.getElementById('sog5-v-l2l3').textContent = parseFloat(d.v_l2_l3_v).toFixed(1);
+            if (d.v_l3_l1_v !== null) document.getElementById('sog5-v-l3l1').textContent = parseFloat(d.v_l3_l1_v).toFixed(1);
+            if (d.cosfi !== null) document.getElementById('sog5-cosfi').textContent = parseFloat(d.cosfi).toFixed(2);
+            if (d.frequency_hz !== null) document.getElementById('sog5-freq').textContent = parseFloat(d.frequency_hz).toFixed(1) + ' Hz';
 
-    const ip = d.inductive_power || {};
-    updateValue('ip_L1', ip.L1);
-    updateValue('ip_L2', ip.L2);
-    updateValue('ip_L3', ip.L3);
-    updateValue('ip_Total', ip.Total);
+            sog5Timer = setTimeout(sog5Poll, sog5Interval);
+        })
+        .catch(function(e) {
+            if (!sog5Polling) return;
+            document.getElementById('sog5-status-badge').style.background = '#dc3545';
+            document.getElementById('sog5-status-badge').textContent = 'Hata';
+            sog5Timer = setTimeout(sog5Poll, sog5Interval * 2);
+        });
+}
 
-    const cp = d.capacitive_power || {};
-    updateValue('cp_L1', cp.L1);
-    updateValue('cp_L2', cp.L2);
-    updateValue('cp_L3', cp.L3);
-    updateValue('cp_Total', cp.Total);
+window.analizorPoll = function() {
+    if (!analizorPolling) return;
+    document.getElementById('analizorStatus').style.background = '#ffc107';
+    document.getElementById('analizorStatus').textContent = 'Okunuyor...';
 
-    const cos = d.cos_phi || {};
-    updateValue('cos_L1', cos.L1);
-    updateValue('cos_L2', cos.L2);
-    updateValue('cos_L3', cos.L3);
+    fetch(analizorApiUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(json) {
+            if (!analizorPolling) return;
+            if (json.success) {
+                document.getElementById('analizorStatus').style.background = '#28a745';
+                document.getElementById('analizorStatus').textContent = 'Bağlı';
+                var d = json.data;
+                var fields = {
+                    'V_L1N': 1, 'V_L2N': 1, 'V_L3N': 1,
+                    'V_L1L2': 1, 'V_L2L3': 1, 'V_L3L1': 1,
+                    'P_L1': 1, 'P_L2': 1, 'P_L3': 1,
+                    'P_total_kW': 2, 'S_total_kVA': 2, 'Q_total_kVAR': 2,
+                    'I_avg_A': 1, 'I_N': 0,
+                    'PF_L1': 3, 'PF_L2': 3, 'PF_L3': 3, 'PF_avg': 3,
+                    'Freq': 2,
+                    'E_import_total_kWh': 1,
+                };
+                var kWconvert = ['P_L1', 'P_L2', 'P_L3'];
+                var numFormat = function(v, decimals) {
+                    if (decimals === 0) return Math.round(v).toLocaleString('tr-TR');
+                    return v.toLocaleString('tr-TR', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+                };
+                Object.keys(fields).forEach(function(k) {
+                    var el = document.getElementById('az_' + k);
+                    if (el && d[k] !== null && d[k] !== undefined) {
+                        var v = parseFloat(d[k]);
+                        if (!isNaN(v)) {
+                            if (kWconvert.indexOf(k) !== -1) { v = v / 1000; }
+                            el.textContent = numFormat(v, fields[k]);
+                        }
+                    }
+                });
+                document.getElementById('analizorTime').textContent = 'Son: ' + d.timestamp;
+                analizorTimer = setTimeout(window.analizorPoll, pollInterval);
+            } else {
+                document.getElementById('analizorStatus').style.background = '#dc3545';
+                document.getElementById('analizorStatus').textContent = 'Hata';
+                document.getElementById('analizorTime').textContent = json.message || '';
+                analizorTimer = setTimeout(window.analizorPoll, pollInterval * 2);
+            }
+        })
+        .catch(function(e) {
+            if (!analizorPolling) return;
+            document.getElementById('analizorStatus').style.background = '#dc3545';
+            document.getElementById('analizorStatus').textContent = 'Bağlantı Hatası';
+            analizorTimer = setTimeout(window.analizorPoll, pollInterval * 2);
+        });
+}
 
-    const thdi = d.thdi || {};
-    updateValue('thdi_L1', thdi.L1, 1);
-    updateValue('thdi_L2', thdi.L2, 1);
-    updateValue('thdi_L3', thdi.L3, 1);
+function sog5TuketimPoll() {
+    if (!tuketimPolling) return;
 
-    const ae = d.active_energy || {};
-    updateValue('ae_L1', ae.L1);
-    updateValue('ae_L2', ae.L2);
-    updateValue('ae_L3', ae.L3);
-    updateValue('ae_Total', ae.Total);
+    fetch('/basic/web/index.php?r=ekipman/sog5-tuketim')
+        .then(function(r) { return r.json(); })
+        .then(function(json) {
+            if (!tuketimPolling) return;
+            if (json.success && json.data) {
+                var d = json.data;
+                
+                if (d.hourly && d.hourly.e_kwh !== null) {
+                    document.getElementById('sog5-e-hourly').textContent = d.hourly.e_kwh;
+                }
+                if (d.daily && d.daily.e_kwh !== null) {
+                    document.getElementById('sog5-e-daily').textContent = d.daily.e_kwh;
+                }
+                if (d.monthly && d.monthly.e_kwh !== null) {
+                    document.getElementById('sog5-e-monthly').textContent = d.monthly.e_kwh;
+                }
+                
+                if (d.hourly && d.hourly.q_ind_total !== null) {
+                    document.getElementById('sog5-qind-hourly').textContent = d.hourly.q_ind_total;
+                    document.getElementById('sog5-qind-oran-hourly').textContent = d.hourly.q_ind_oran !== null ? '(' + d.hourly.q_ind_oran + '%)' : '';
+                }
+                if (d.daily && d.daily.q_ind_total !== null) {
+                    document.getElementById('sog5-qind-daily').textContent = d.daily.q_ind_total;
+                    document.getElementById('sog5-qind-oran-daily').textContent = d.daily.q_ind_oran !== null ? '(' + d.daily.q_ind_oran + '%)' : '';
+                }
+                if (d.monthly && d.monthly.q_ind_total !== null) {
+                    document.getElementById('sog5-qind-monthly').textContent = d.monthly.q_ind_total;
+                    document.getElementById('sog5-qind-oran-monthly').textContent = d.monthly.q_ind_oran !== null ? '(' + d.monthly.q_ind_oran + '%)' : '';
+                }
+                
+                if (d.hourly && d.hourly.q_cap_total !== null) {
+                    document.getElementById('sog5-qcap-hourly').textContent = d.hourly.q_cap_total;
+                    document.getElementById('sog5-qcap-oran-hourly').textContent = d.hourly.q_cap_oran !== null ? '(' + d.hourly.q_cap_oran + '%)' : '';
+                }
+                if (d.daily && d.daily.q_cap_total !== null) {
+                    document.getElementById('sog5-qcap-daily').textContent = d.daily.q_cap_total;
+                    document.getElementById('sog5-qcap-oran-daily').textContent = d.daily.q_cap_oran !== null ? '(' + d.daily.q_cap_oran + '%)' : '';
+                }
+                if (d.monthly && d.monthly.q_cap_total !== null) {
+                    document.getElementById('sog5-qcap-monthly').textContent = d.monthly.q_cap_total;
+                    document.getElementById('sog5-qcap-oran-monthly').textContent = d.monthly.q_cap_oran !== null ? '(' + d.monthly.q_cap_oran + '%)' : '';
+                }
+            }
+            tuketimTimer = setTimeout(sog5TuketimPoll, 60000);
+        })
+        .catch(function(e) {
+            tuketimTimer = setTimeout(sog5TuketimPoll, 120000);
+        });
+}
 
-    const re = d.reactive_energy || {};
-    updateValue('re_ind', re.inductive_total);
-    updateValue('re_cap', re.capacitive_total);
-  }
+function loadGrafik(type) {
+    var containerId = type === 'hourly' ? 'chart-hourly-container' : (type === 'daily' ? 'chart-daily-container' : 'chart-monthly-container');
+    
+    fetch('/basic/web/index.php?r=ekipman/sog5-grafik&type=' + type)
+        .then(function(r) { return r.json(); })
+        .then(function(json) {
+            if (json.success && json.data) {
+                var d = json.data;
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                
+                var barsContainer = container.querySelector('.chart-bars');
+                if (!barsContainer) return;
+                
+                var maxVal = 0;
+                for (var i = 0; i < d.aktif.length; i++) {
+                    if (d.aktif[i] > maxVal) maxVal = d.aktif[i];
+                    if (d.qind[i] > maxVal) maxVal = d.qind[i];
+                    if (d.qcap[i] > maxVal) maxVal = d.qcap[i];
+                }
+                if (maxVal === 0) maxVal = 1;
+                
+                barsContainer.innerHTML = '';
+                
+                for (var i = 0; i < d.labels.length; i++) {
+                    var eVal = d.aktif[i] || 0;
+                    var qindVal = d.qind[i] || 0;
+                    var qcapVal = d.qcap[i] || 0;
+                    
+                    var group = document.createElement('div');
+                    group.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:20px;';
+                    
+                    var stack = document.createElement('div');
+                    stack.style.cssText = 'display:flex;align-items:flex-end;gap:1px;height:150px;width:100%;';
+                    
+                    var eH = (eVal / maxVal * 100);
+                    var eBar = document.createElement('div');
+                    eBar.style.cssText = 'flex:1;background:#22c55e;min-height:2px;border-radius:2px 2px 0 0;height:' + eH + '%;';
+                    
+                    var qindH = (qindVal / maxVal * 100);
+                    var qindBar = document.createElement('div');
+                    qindBar.style.cssText = 'flex:1;background:#f59e0b;min-height:2px;border-radius:2px 2px 0 0;height:' + qindH + '%;';
+                    
+                    var qcapH = (qcapVal / maxVal * 100);
+                    var qcapBar = document.createElement('div');
+                    qcapBar.style.cssText = 'flex:1;background:#06b6d4;min-height:2px;border-radius:2px 2px 0 0;height:' + qcapH + '%;';
+                    
+                    stack.appendChild(eBar);
+                    stack.appendChild(qindBar);
+                    stack.appendChild(qcapBar);
+                    
+                    var label = document.createElement('div');
+                    label.style.cssText = 'font-size:9px;color:#9ca3af;text-align:center;';
+                    label.textContent = d.labels[i];
+                    
+                    group.appendChild(stack);
+                    group.appendChild(label);
+                    barsContainer.appendChild(group);
+                }
+            }
+        });
+}
 
-  function connect() {
-    const ws = new WebSocket('ws://127.0.0.1:3456/ws');
-    ws.binaryType = 'arraybuffer';
+document.querySelectorAll('#chartTab button').forEach(function(btn) {
+    btn.addEventListener('shown.bs.tab', function() {
+        var typeMap = { 
+            'chart-hourly-tab': 'hourly', 
+            'chart-daily-tab': 'daily', 
+            'chart-monthly-tab': 'monthly' 
+        };
+        var type = typeMap[this.id] || 'hourly';
+        loadGrafik(type);
+    });
+});
 
-    ws.onopen = () => {
-      statusEl.textContent = 'Bağlantı kuruldu, veri bekleniyor...';
-      statusEl.className = 'status connected';
-    };
-
-    ws.onmessage = (ev) => {
-      try {
-        const text = new TextDecoder().decode(ev.data);
-        const data = JSON.parse(text);
-        onData(data);
-      } catch (e) {}
-    };
-
-    ws.onclose = () => {
-      statusEl.textContent = 'Bağlantı koptu, yeniden bağlanılıyor...';
-      statusEl.className = 'status disconnected';
-      setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      statusEl.textContent = 'Bağlantı hatası';
-      statusEl.className = 'status disconnected';
-    };
-  }
-
-  connect();
+window.onload = function() {
+    sog5Polling = true;
+    sog5Poll();
+    
+    analizorPolling = true;
+    analizorPoll();
+    
+    tuketimPolling = true;
+    sog5TuketimPoll();
+    
+    loadGrafik('hourly');
+};
 </script>
