@@ -228,6 +228,12 @@ class Sog5Controller extends Controller
             'e_total_kwh' => ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0),
             'q_ind_kvarh' => ($data['e_l1_reactive_ind_kvarh'] ?? 0) + ($data['e_l2_reactive_ind_kvarh'] ?? 0) + ($data['e_l3_reactive_ind_kvarh'] ?? 0),
             'q_cap_kvarh' => ($data['e_l1_reactive_cap_kvarh'] ?? 0) + ($data['e_l2_reactive_cap_kvarh'] ?? 0) + ($data['e_l3_reactive_cap_kvarh'] ?? 0),
+            'e_l1_reactive_ind_kvarh' => $data['e_l1_reactive_ind_kvarh'] ?? 0,
+            'e_l2_reactive_ind_kvarh' => $data['e_l2_reactive_ind_kvarh'] ?? 0,
+            'e_l3_reactive_ind_kvarh' => $data['e_l3_reactive_ind_kvarh'] ?? 0,
+            'e_l1_reactive_cap_kvarh' => $data['e_l1_reactive_cap_kvarh'] ?? 0,
+            'e_l2_reactive_cap_kvarh' => $data['e_l2_reactive_cap_kvarh'] ?? 0,
+            'e_l3_reactive_cap_kvarh' => $data['e_l3_reactive_cap_kvarh'] ?? 0,
         ])->execute();
     }
 }
