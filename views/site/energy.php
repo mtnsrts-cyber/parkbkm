@@ -23,27 +23,31 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
 ?>
 
 <style>
-.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; }
-.sog5-panel h5 { color:#e94560; margin-bottom:16px; font-size:16px; }
-.sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:12px; margin-bottom:12px; }
-.sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #2d3348; }
+.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:12px; font-size:12px; }
+.sog5-panel h5 { color:#e94560; margin-bottom:10px; font-size:13px; }
+.sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:8px; margin-bottom:8px; }
+.sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; border-bottom:1px solid #2d3348; font-size:11px; }
 .sog5-step-row:last-child { border-bottom:none; }
-.sog5-step-dot { width:12px; height:12px; border-radius:50%; display:inline-block; margin-right:6px; }
-.sog5-dot-on { background:#22c55e; box-shadow:0 0 6px #22c55e; }
+.sog5-step-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:5px; }
+.sog5-dot-on { background:#22c55e; box-shadow:0 0 5px #22c55e; }
 .sog5-dot-off { background:#374151; }
-.sog5-steps-horizontal { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
-.sog5-step-item { text-align:center; min-width:48px; }
-.sog5-step-item .sog5-step-dot { width:16px; height:16px; margin:0 auto 4px; }
-.sog5-step-item .step-num { font-size:10px; color:#9ca3af; }
-.sog5-power-bar { display:flex; align-items:center; gap:8px; margin:6px 0; flex-wrap:wrap; }
-.sog5-power-bar-label { width:70px; font-size:12px; color:#9ca3af; flex-shrink:0; }
-.sog5-power-bar-track { flex:1; min-width:100px; height:14px; background:#2d3348; border-radius:4px; overflow:hidden; position:relative; }
+.sog5-steps-horizontal { display:flex; gap:4px; flex-wrap:wrap; justify-content:center; }
+.sog5-step-item { text-align:center; min-width:36px; }
+.sog5-step-item .sog5-step-dot { width:12px; height:12px; margin:0 auto 3px; }
+.sog5-step-item .step-num { font-size:9px; color:#9ca3af; }
+.sog5-power-bar { display:flex; align-items:center; gap:6px; margin:4px 0; flex-wrap:wrap; }
+.sog5-power-bar-label { width:60px; font-size:11px; color:#9ca3af; flex-shrink:0; }
+.sog5-power-bar-track { flex:1; min-width:80px; height:11px; background:#2d3348; border-radius:4px; overflow:hidden; position:relative; }
 .sog5-power-bar-fill { height:100%; border-radius:4px; transition:width 0.5s ease; }
 .sog5-bar-p { background:#22c55e; }
 .sog5-bar-qind { background:#f59e0b; }
 .sog5-bar-qcap { background:#06b6d4; }
-.sog5-power-bar-value { min-width:60px; text-align:right; font-size:12px; font-weight:bold; }
-.energy-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; }
+.sog5-power-bar-value { min-width:52px; text-align:right; font-size:11px; font-weight:bold; }
+.energy-card { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 8px; }
+.sog5-panel .h5 { font-size:1rem !important; }
+.sog5-panel .h6 { font-size:0.85rem !important; }
+.sog5-panel .small, .sog5-panel .text-muted { font-size:10px !important; }
+.sog5-panel .badge { font-size:9px; padding:2px 6px; }
 </style>
 
 <div class="container-fluid mt-3">
