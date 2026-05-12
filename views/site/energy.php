@@ -23,7 +23,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
 ?>
 
 <style>
-.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; max-height:82vh; overflow-y:auto; }
+.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; }
 .sog5-panel h5 { color:#e94560; margin-bottom:16px; font-size:16px; }
 .sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:12px; margin-bottom:12px; }
 .sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #2d3348; }
@@ -172,79 +172,6 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
                     </div>
                 </div>
                 
-                <!-- Grafik Kartı -->
-                <div class="sog5-status-card mt-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="text-muted small"><strong>Tüketim Grafiği</strong></div>
-                        <div class="d-flex gap-2" style="font-size:10px;">
-                            <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;"></span> Aktif</span>
-                            <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> Endüktif</span>
-                            <span><span style="display:inline-block;width:10px;height:10px;background:#06b6d4;border-radius:2px;"></span> Kapasitif</span>
-                        </div>
-                    </div>
-                    <ul class="nav nav-tabs mb-2" id="chartTab" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active small py-1 px-2" id="chart-hourly-tab" data-bs-toggle="tab" data-bs-target="#chart-hourly-pane" type="button" role="tab">Saatlik</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link small py-1 px-2" id="chart-daily-tab" data-bs-toggle="tab" data-bs-target="#chart-daily-pane" type="button" role="tab">Günlük</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link small py-1 px-2" id="chart-monthly-tab" data-bs-toggle="tab" data-bs-target="#chart-monthly-pane" type="button" role="tab">Aylık</button>
-                        </li>
-                    </ul>
-                    <div class="tab-content" id="chartTabContent">
-                        <div class="tab-pane fade show active" id="chart-hourly-pane" role="tabpanel">
-                            <div id="chart-hourly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
-                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
-                            </div>
-                        </div>
-                        <div class="tab-pane fade" id="chart-daily-pane" role="tabpanel">
-                            <div id="chart-daily-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
-                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
-                            </div>
-                        </div>
-                        <div class="tab-pane fade" id="chart-monthly-pane" role="tabpanel">
-                            <div id="chart-monthly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
-                                <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Gerilim -->
-                <div class="sog5-status-card">
-                    <div class="text-muted small mb-2"><strong>Gerilim</strong></div>
-                    <div class="row">
-                        <div class="col-6">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tr><td class="text-muted">V L1-N</td><td class="text-right font-weight-bold" id="sog5-v-l1n">---</td><td class="text-muted">V</td></tr>
-                                <tr><td class="text-muted">V L2-N</td><td class="text-right font-weight-bold" id="sog5-v-l2n">---</td><td class="text-muted">V</td></tr>
-                                <tr><td class="text-muted">V L3-N</td><td class="text-right font-weight-bold" id="sog5-v-l3n">---</td><td class="text-muted">V</td></tr>
-                            </table>
-                        </div>
-                        <div class="col-6">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tr><td class="text-muted">V L1-L2</td><td class="text-right font-weight-bold" id="sog5-v-l1l2">---</td><td class="text-muted">V</td></tr>
-                                <tr><td class="text-muted">V L2-L3</td><td class="text-right font-weight-bold" id="sog5-v-l2l3">---</td><td class="text-muted">V</td></tr>
-                                <tr><td class="text-muted">V L3-L1</td><td class="text-right font-weight-bold" id="sog5-v-l3l1">---</td><td class="text-muted">V</td></tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Kademe Durumları -->
-                <div class="sog5-status-card">
-                    <div class="text-muted small mb-2 text-center"><strong>Kademe Durumları</strong></div>
-                    <div id="sog5-steps" class="sog5-steps-horizontal">
-                        <?php for ($i = 1; $i <= 12; $i++): ?>
-                        <div class="sog5-step-item">
-                            <span class="sog5-step-dot sog5-dot-off" id="step-dot-<?= $i ?>"></span>
-                            <div class="step-num">K<?= $i ?></div>
-                        </div>
-                        <?php endfor; ?>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -345,6 +272,89 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
                     </div>
                 </div>
             <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Alt Satır: Tüketim Grafiği + Gerilim + Kademe -->
+    <div class="row mt-3">
+        <!-- Tüketim Grafiği -->
+        <div class="col-lg-7 mb-3">
+            <div class="sog5-panel">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="text-muted small"><strong>Tüketim Grafiği</strong></div>
+                    <div class="d-flex gap-2" style="font-size:10px;">
+                        <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;"></span> Aktif</span>
+                        <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> Endüktif</span>
+                        <span><span style="display:inline-block;width:10px;height:10px;background:#06b6d4;border-radius:2px;"></span> Kapasitif</span>
+                    </div>
+                </div>
+                <ul class="nav nav-tabs mb-2" id="chartTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active small py-1 px-2" id="chart-hourly-tab" data-bs-toggle="tab" data-bs-target="#chart-hourly-pane" type="button" role="tab">Saatlik</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link small py-1 px-2" id="chart-daily-tab" data-bs-toggle="tab" data-bs-target="#chart-daily-pane" type="button" role="tab">Günlük</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link small py-1 px-2" id="chart-monthly-tab" data-bs-toggle="tab" data-bs-target="#chart-monthly-pane" type="button" role="tab">Aylık</button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="chartTabContent">
+                    <div class="tab-pane fade show active" id="chart-hourly-pane" role="tabpanel">
+                        <div id="chart-hourly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                            <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="chart-daily-pane" role="tabpanel">
+                        <div id="chart-daily-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                            <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="chart-monthly-pane" role="tabpanel">
+                        <div id="chart-monthly-container" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding:10px 0;">
+                            <div class="chart-bars" style="display:flex;align-items:flex-end;gap:3px;height:160px;width:100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gerilim + Kademe Durumları -->
+        <div class="col-lg-5 mb-3">
+            <div class="sog5-panel">
+                <!-- Gerilim -->
+                <div class="sog5-status-card mb-3">
+                    <div class="text-muted small mb-2"><strong>Gerilim</strong></div>
+                    <div class="row">
+                        <div class="col-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr><td class="text-muted">V L1-N</td><td class="text-right font-weight-bold" id="sog5-v-l1n">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L2-N</td><td class="text-right font-weight-bold" id="sog5-v-l2n">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L3-N</td><td class="text-right font-weight-bold" id="sog5-v-l3n">---</td><td class="text-muted">V</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr><td class="text-muted">V L1-L2</td><td class="text-right font-weight-bold" id="sog5-v-l1l2">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L2-L3</td><td class="text-right font-weight-bold" id="sog5-v-l2l3">---</td><td class="text-muted">V</td></tr>
+                                <tr><td class="text-muted">V L3-L1</td><td class="text-right font-weight-bold" id="sog5-v-l3l1">---</td><td class="text-muted">V</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <!-- Kademe Durumları -->
+                <div class="sog5-status-card">
+                    <div class="text-muted small mb-2 text-center"><strong>Kademe Durumları</strong></div>
+                    <div id="sog5-steps" class="sog5-steps-horizontal">
+                        <?php for ($i = 1; $i <= 12; $i++): ?>
+                        <div class="sog5-step-item">
+                            <span class="sog5-step-dot sog5-dot-off" id="step-dot-<?= $i ?>"></span>
+                            <div class="step-num">K<?= $i ?></div>
+                        </div>
+                        <?php endfor; ?>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
