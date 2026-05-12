@@ -51,8 +51,8 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
         ⚡ Enerji İzleme Dashboard
     </h4>
     <div class="row">
-        <!-- SOG5 - SOL 1/3 -->
-        <div class="col-lg-4 mb-3">
+        <!-- SOG5 - SOL 1/2 -->
+        <div class="col-lg-6 mb-3">
             <div class="sog5-panel">
                 <h5>🔧 SOG5 Güç Kontrol Rölesi</h5>
                 
@@ -249,7 +249,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
         </div>
 
         <!-- ENTES - SAĞ 2/3 -->
-        <div class="col-lg-8">
+        <div class="col-lg-6">
             <!-- Analizör Seçici -->
             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
                 <select class="form-select form-select-sm w-auto" onchange="window.location.href='<?= Url::to(['site/energy']) ?>&id='+this.value">
