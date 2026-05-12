@@ -53,35 +53,40 @@ class Sog5Controller extends Controller
                 return $v >= 0x80000000 ? ($v - 0x100000000) : $v;
             };
 
+            // Modbus'tan null gelen değerleri bölme hatasına sokmamak için null-safe bölme.
+            $safeDiv = function($val, $divisor) {
+                return $val !== null ? $val / $divisor : null;
+            };
+
             $data = [
-                'e_l1_import_kwh' => $readU32(0) / 1000,
-                'e_l2_import_kwh' => $readU32(2) / 1000,
-                'e_l3_import_kwh' => $readU32(4) / 1000,
-                'e_l1_reactive_ind_kvarh' => $readU32(12) / 1000,
-                'e_l2_reactive_ind_kvarh' => $readU32(14) / 1000,
-                'e_l3_reactive_ind_kvarh' => $readU32(16) / 1000,
-                'e_l1_reactive_cap_kvarh' => $readU32(18) / 1000,
-                'e_l2_reactive_cap_kvarh' => $readU32(20) / 1000,
-                'e_l3_reactive_cap_kvarh' => $readU32(22) / 1000,
-                'p_l1_kw' => $readS32(24) / 1000,
-                'p_l2_kw' => $readS32(26) / 1000,
-                'p_l3_kw' => $readS32(28) / 1000,
-                'q_ind_l1_kvar' => $readS32(30) / 1000,
-                'q_ind_l2_kvar' => $readS32(32) / 1000,
-                'q_ind_l3_kvar' => $readS32(34) / 1000,
-                'q_cap_l1_var' => $readS32(36) / 1000,
-                'q_cap_l2_var' => $readS32(38) / 1000,
-                'q_cap_l3_var' => $readS32(40) / 1000,
-                'pf_l1' => $readU16(42) / 100,
-                'pf_l2' => $readU16(43) / 100,
-                'pf_l3' => $readU16(44) / 100,
-                'f_l1_hz' => $readU16(47) / 10,
-                'v_l1_v' => $readU16(56),
-                'v_l2_v' => $readU16(57),
-                'v_l3_v' => $readU16(58),
-                'i_l1_a' => $readU32(59) / 100,
-                'i_l2_a' => $readU32(61) / 100,
-                'i_l3_a' => $readU32(63) / 100,
+                'e_l1_import_kwh'         => $safeDiv($readU32(0),  1000),
+                'e_l2_import_kwh'         => $safeDiv($readU32(2),  1000),
+                'e_l3_import_kwh'         => $safeDiv($readU32(4),  1000),
+                'e_l1_reactive_ind_kvarh' => $safeDiv($readU32(12), 1000),
+                'e_l2_reactive_ind_kvarh' => $safeDiv($readU32(14), 1000),
+                'e_l3_reactive_ind_kvarh' => $safeDiv($readU32(16), 1000),
+                'e_l1_reactive_cap_kvarh' => $safeDiv($readU32(18), 1000),
+                'e_l2_reactive_cap_kvarh' => $safeDiv($readU32(20), 1000),
+                'e_l3_reactive_cap_kvarh' => $safeDiv($readU32(22), 1000),
+                'p_l1_kw'       => $safeDiv($readS32(24), 1000),
+                'p_l2_kw'       => $safeDiv($readS32(26), 1000),
+                'p_l3_kw'       => $safeDiv($readS32(28), 1000),
+                'q_ind_l1_kvar' => $safeDiv($readS32(30), 1000),
+                'q_ind_l2_kvar' => $safeDiv($readS32(32), 1000),
+                'q_ind_l3_kvar' => $safeDiv($readS32(34), 1000),
+                'q_cap_l1_var'  => $safeDiv($readS32(36), 1000),
+                'q_cap_l2_var'  => $safeDiv($readS32(38), 1000),
+                'q_cap_l3_var'  => $safeDiv($readS32(40), 1000),
+                'pf_l1'   => $safeDiv($readU16(42), 100),
+                'pf_l2'   => $safeDiv($readU16(43), 100),
+                'pf_l3'   => $safeDiv($readU16(44), 100),
+                'f_l1_hz' => $safeDiv($readU16(47), 10),
+                'v_l1_v'  => $readU16(56),
+                'v_l2_v'  => $readU16(57),
+                'v_l3_v'  => $readU16(58),
+                'i_l1_a'  => $safeDiv($readU32(59), 100),
+                'i_l2_a'  => $safeDiv($readU32(61), 100),
+                'i_l3_a'  => $safeDiv($readU32(63), 100),
                 'step_status_bits' => $readU32(73),
             ];
 
@@ -122,35 +127,49 @@ class Sog5Controller extends Controller
 
     private function logSog5Raw(array $data)
     {
-        // Debug log
         file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', date('Y-m-d H:i:s') . ' logSog5Raw called' . PHP_EOL, FILE_APPEND);
-        
-        // Aynı dakikada varsa kaydetme
+
         $datetime = date('Y-m-d H:i:00');
-        $last = Yii::$app->db->createCommand('SELECT log_datetime FROM sog5_energy_logs_raw ORDER BY log_datetime DESC LIMIT 1')->queryOne();
-        if ($last && $last['log_datetime'] === $datetime) {
+
+        // Son satırı çek: hem aynı-dakika kontrolü hem last-known-good için kullan
+        $lastRaw = Yii::$app->db->createCommand(
+            'SELECT * FROM sog5_energy_logs_raw ORDER BY log_datetime DESC LIMIT 1'
+        )->queryOne() ?: [];
+
+        if (($lastRaw['log_datetime'] ?? null) === $datetime) {
             file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', date('Y-m-d H:i:s') . ' Same minute - skipped' . PHP_EOL, FILE_APPEND);
-            return; // Aynı dakika - atla
+            return;
         }
-        
-        $eTotal = ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0);
-        
+
+        // Her kolon için: Modbus'tan gelen değer null ise son geçerli DB değerini kullan (last-known-good)
+        $lkg = function(string $key) use ($data, $lastRaw): ?float {
+            return $data[$key] ?? ($lastRaw[$key] ?? null);
+        };
+
+        // e_total_kwh: üç faz toplamı — herhangi biri null ise son raw değere düş
+        $eL1 = $data['e_l1_import_kwh'] ?? null;
+        $eL2 = $data['e_l2_import_kwh'] ?? null;
+        $eL3 = $data['e_l3_import_kwh'] ?? null;
+        $eTotal = ($eL1 !== null && $eL2 !== null && $eL3 !== null)
+            ? ($eL1 + $eL2 + $eL3)
+            : ($lastRaw['e_total_kwh'] ?? null);
+
         Yii::$app->db->createCommand()->insert('sog5_energy_logs_raw', [
-            'log_datetime' => $datetime,
-            'e_total_kwh' => $eTotal,
-            'e_l1_reactive_ind_kvarh' => $data['e_l1_reactive_ind_kvarh'] ?? 0,
-            'e_l2_reactive_ind_kvarh' => $data['e_l2_reactive_ind_kvarh'] ?? 0,
-            'e_l3_reactive_ind_kvarh' => $data['e_l3_reactive_ind_kvarh'] ?? 0,
-            'e_l1_reactive_cap_kvarh' => $data['e_l1_reactive_cap_kvarh'] ?? 0,
-            'e_l2_reactive_cap_kvarh' => $data['e_l2_reactive_cap_kvarh'] ?? 0,
-            'e_l3_reactive_cap_kvarh' => $data['e_l3_reactive_cap_kvarh'] ?? 0,
+            'log_datetime'            => $datetime,
+            'e_total_kwh'             => $eTotal,
+            'e_l1_reactive_ind_kvarh' => $lkg('e_l1_reactive_ind_kvarh'),
+            'e_l2_reactive_ind_kvarh' => $lkg('e_l2_reactive_ind_kvarh'),
+            'e_l3_reactive_ind_kvarh' => $lkg('e_l3_reactive_ind_kvarh'),
+            'e_l1_reactive_cap_kvarh' => $lkg('e_l1_reactive_cap_kvarh'),
+            'e_l2_reactive_cap_kvarh' => $lkg('e_l2_reactive_cap_kvarh'),
+            'e_l3_reactive_cap_kvarh' => $lkg('e_l3_reactive_cap_kvarh'),
         ])->execute();
-        
+
         file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', date('Y-m-d H:i:s') . ' Inserted: ' . $datetime . PHP_EOL, FILE_APPEND);
-        
+
         // Önceki saatin verisini sog5_energy_logs'a aktar (temizlikten önce)
         $this->migrateHourlyLogs();
-        
+
         // Eski kayıtları temizle (48 saatten eski)
         $cleanup = date('Y-m-d H:i:00', strtotime('-48 hours'));
         Yii::$app->db->createCommand('DELETE FROM sog5_energy_logs_raw WHERE log_datetime < :cleanup')
@@ -168,18 +187,19 @@ class Sog5Controller extends Controller
             ->bindValue(':hour', $prevHour)->queryOne();
         if ($exists) return;
         
-        // Önceki saatin raw verisini al (son 5 dakikada ortalama)
+        // Önceki saatin raw verisini al — kümülatif sayaç için MAX (saatin en son geçerli değeri)
+        // NULLIF(..., 0): Modbus okuma hatasından kaynaklanan 0 değerlerini dışla
         $hourData = Yii::$app->db->createCommand('
             SELECT 
-                AVG(e_total_kwh) as e_total,
-                AVG(e_l1_reactive_ind_kvarh) as q_ind_1,
-                AVG(e_l2_reactive_ind_kvarh) as q_ind_2,
-                AVG(e_l3_reactive_ind_kvarh) as q_ind_3,
-                AVG(e_l1_reactive_cap_kvarh) as q_cap_1,
-                AVG(e_l2_reactive_cap_kvarh) as q_cap_2,
-                AVG(e_l3_reactive_cap_kvarh) as q_cap_3
+                MAX(NULLIF(e_total_kwh,             0)) AS e_total,
+                MAX(NULLIF(e_l1_reactive_ind_kvarh, 0)) AS q_ind_1,
+                MAX(NULLIF(e_l2_reactive_ind_kvarh, 0)) AS q_ind_2,
+                MAX(NULLIF(e_l3_reactive_ind_kvarh, 0)) AS q_ind_3,
+                MAX(NULLIF(e_l1_reactive_cap_kvarh, 0)) AS q_cap_1,
+                MAX(NULLIF(e_l2_reactive_cap_kvarh, 0)) AS q_cap_2,
+                MAX(NULLIF(e_l3_reactive_cap_kvarh, 0)) AS q_cap_3
             FROM sog5_energy_logs_raw 
-            WHERE log_datetime >= :start AND log_datetime < :end AND e_total_kwh > 1000000
+            WHERE log_datetime >= :start AND log_datetime < :end
         ')->bindValue(':start', $prevHour)->bindValue(':end', $currentHour)->queryOne();
         
         if ($hourData && $hourData['e_total'] > 0) {
@@ -213,27 +233,51 @@ class Sog5Controller extends Controller
     private function logSog5Energy(array $data, $force = false)
     {
         $now = date('Y-m-d H:00:00');
-        
-        $lastLog = Yii::$app->db->createCommand('SELECT log_date FROM sog5_energy_logs ORDER BY log_date DESC LIMIT 1')->queryOne();
 
-        if (!$force && $lastLog && $lastLog['log_date'] === $now) {
+        // Son energy log satırını çek: hem tekrar kontrolü hem last-known-good için
+        $lastLog = Yii::$app->db->createCommand(
+            'SELECT * FROM sog5_energy_logs ORDER BY log_date DESC LIMIT 1'
+        )->queryOne() ?: [];
+
+        if (!$force && ($lastLog['log_date'] ?? null) === $now) {
             return;
         }
 
+        // Her kolon için: Modbus'tan gelen değer null ise son energy log değerini kullan (last-known-good)
+        // Not: $data'daki import anahtarları DB kolonlarından farklı (e_l1_import_kwh → e_l1_kwh)
+        $eL1 = $data['e_l1_import_kwh'] ?? ($lastLog['e_l1_kwh'] ?? null);
+        $eL2 = $data['e_l2_import_kwh'] ?? ($lastLog['e_l2_kwh'] ?? null);
+        $eL3 = $data['e_l3_import_kwh'] ?? ($lastLog['e_l3_kwh'] ?? null);
+
+        $eTotal = ($eL1 !== null && $eL2 !== null && $eL3 !== null)
+            ? ($eL1 + $eL2 + $eL3)
+            : ($lastLog['e_total_kwh'] ?? null);
+
+        $lkg = function(string $key) use ($data, $lastLog): ?float {
+            return $data[$key] ?? ($lastLog[$key] ?? null);
+        };
+
+        $l1ind = $lkg('e_l1_reactive_ind_kvarh');
+        $l2ind = $lkg('e_l2_reactive_ind_kvarh');
+        $l3ind = $lkg('e_l3_reactive_ind_kvarh');
+        $l1cap = $lkg('e_l1_reactive_cap_kvarh');
+        $l2cap = $lkg('e_l2_reactive_cap_kvarh');
+        $l3cap = $lkg('e_l3_reactive_cap_kvarh');
+
         Yii::$app->db->createCommand()->insert('sog5_energy_logs', [
-            'log_date' => $now,
-            'e_l1_kwh' => $data['e_l1_import_kwh'] ?? 0,
-            'e_l2_kwh' => $data['e_l2_import_kwh'] ?? 0,
-            'e_l3_kwh' => $data['e_l3_import_kwh'] ?? 0,
-            'e_total_kwh' => ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0),
-            'q_ind_kvarh' => ($data['e_l1_reactive_ind_kvarh'] ?? 0) + ($data['e_l2_reactive_ind_kvarh'] ?? 0) + ($data['e_l3_reactive_ind_kvarh'] ?? 0),
-            'q_cap_kvarh' => ($data['e_l1_reactive_cap_kvarh'] ?? 0) + ($data['e_l2_reactive_cap_kvarh'] ?? 0) + ($data['e_l3_reactive_cap_kvarh'] ?? 0),
-            'e_l1_reactive_ind_kvarh' => $data['e_l1_reactive_ind_kvarh'] ?? 0,
-            'e_l2_reactive_ind_kvarh' => $data['e_l2_reactive_ind_kvarh'] ?? 0,
-            'e_l3_reactive_ind_kvarh' => $data['e_l3_reactive_ind_kvarh'] ?? 0,
-            'e_l1_reactive_cap_kvarh' => $data['e_l1_reactive_cap_kvarh'] ?? 0,
-            'e_l2_reactive_cap_kvarh' => $data['e_l2_reactive_cap_kvarh'] ?? 0,
-            'e_l3_reactive_cap_kvarh' => $data['e_l3_reactive_cap_kvarh'] ?? 0,
+            'log_date'                => $now,
+            'e_l1_kwh'               => $eL1,
+            'e_l2_kwh'               => $eL2,
+            'e_l3_kwh'               => $eL3,
+            'e_total_kwh'            => $eTotal,
+            'q_ind_kvarh'            => ($l1ind ?? 0) + ($l2ind ?? 0) + ($l3ind ?? 0),
+            'q_cap_kvarh'            => ($l1cap ?? 0) + ($l2cap ?? 0) + ($l3cap ?? 0),
+            'e_l1_reactive_ind_kvarh' => $l1ind,
+            'e_l2_reactive_ind_kvarh' => $l2ind,
+            'e_l3_reactive_ind_kvarh' => $l3ind,
+            'e_l1_reactive_cap_kvarh' => $l1cap,
+            'e_l2_reactive_cap_kvarh' => $l2cap,
+            'e_l3_reactive_cap_kvarh' => $l3cap,
         ])->execute();
     }
 }
