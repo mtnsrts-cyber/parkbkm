@@ -23,7 +23,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
 ?>
 
 <style>
-.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; }
+.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:16px; max-height:82vh; overflow-y:auto; }
 .sog5-panel h5 { color:#e94560; margin-bottom:16px; font-size:16px; }
 .sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:12px; margin-bottom:12px; }
 .sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #2d3348; }
