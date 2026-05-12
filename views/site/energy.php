@@ -23,7 +23,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
 ?>
 
 <style>
-.sog5-panel { background:#1a1d29; border:1px solid #2d3348; border-radius:8px; padding:12px; font-size:12px; }
+.sog5-panel { background:#0d1626; border:1px solid #1e3a5f; border-top:3px solid #38bdf8; border-radius:8px; padding:12px; font-size:12px; }
 .sog5-panel h5 { color:#e94560; margin-bottom:10px; font-size:13px; }
 .sog5-status-card { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:8px; margin-bottom:8px; }
 .sog5-step-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; border-bottom:1px solid #2d3348; font-size:11px; }
@@ -179,8 +179,9 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
             </div>
         </div>
 
-        <!-- ENTES - SAĞ 2/3 -->
-        <div class="col-lg-6">
+        <!-- ENTES - SAĞ 1/2 -->
+        <div class="col-lg-6" style="border-left: 2px solid #2d3348; padding-left:20px;">
+            <div style="background:#12111a; border:1px solid #2d1f4a; border-top:3px solid #e94560; border-radius:8px; padding:12px;">
             <!-- Analizör Seçici -->
             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
                 <select class="form-select form-select-sm w-auto" onchange="window.location.href='<?= Url::to(['site/energy']) ?>&id='+this.value">
@@ -276,6 +277,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
                     </div>
                 </div>
             <?php endif; ?>
+            </div><!-- /entes-wrapper -->
         </div>
     </div>
 
