@@ -6,9 +6,9 @@ use yii\helpers\Url;
 
 $this->title = 'ELEKTRİK TEK HAT ŞEMASI';
 
-$this->registerCssFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+$this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
 
-$this->registerJsFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', ['position' => \yii\web\View::POS_HEAD]);
+$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['position' => \yii\web\View::POS_HEAD]);
 
 ?>
 

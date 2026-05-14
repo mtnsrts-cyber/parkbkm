@@ -35,6 +35,7 @@ tests/_support/_generated
 
 # runtime & cache (logs, sessions, cache)
 /runtime/*
+/logs/*
 !/runtime/.gitignore
 
 # generated web assets

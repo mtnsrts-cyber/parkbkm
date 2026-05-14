@@ -108,6 +108,62 @@ public function actionExportPdf()
     $pdf->Output('ekipman_listesi.pdf', 'D');
 }
 
+    public function actionDokumanAc($dokumanId)
+    {
+        $dokuman = EkipmanDokuman::findOne((int)$dokumanId);
+        if (!$dokuman || empty($dokuman->dosya_yolu)) {
+            throw new NotFoundHttpException('Dokuman bulunamadi.');
+        }
+
+        $relativePath = ltrim(str_replace('\\', '/', (string)$dokuman->dosya_yolu), '/');
+        if (stripos($relativePath, 'uploads/') !== 0) {
+            $relativePath = 'uploads/' . $relativePath;
+        }
+
+        $fullPath = Yii::getAlias('@webroot/' . $relativePath);
+        $realPath = realpath($fullPath);
+        $uploadsRoot = str_replace('\\', '/', (string)realpath(Yii::getAlias('@webroot/uploads')));
+
+        if ($realPath === false || !is_file($realPath)) {
+            $normalize = static function (string $s): string {
+                $s = mb_strtolower($s, 'UTF-8');
+                $s = strtr($s, [
+                    'ı' => 'i', 'İ' => 'i', 'i̇' => 'i',
+                    'ş' => 's', 'ğ' => 'g', 'ü' => 'u', 'ö' => 'o', 'ç' => 'c',
+                    '�' => 'i',
+                ]);
+                return preg_replace('/[^a-z0-9._-]+/u', '', $s);
+            };
+
+            $targetBase = basename($relativePath);
+            $targetNorm = $normalize($targetBase);
+            $docNameNorm = $normalize((string)$dokuman->dokuman_adi);
+            $candidates = FileHelper::findFiles(Yii::getAlias('@webroot/uploads'));
+            foreach ($candidates as $candidate) {
+                $candidateBaseNorm = $normalize(basename($candidate));
+                $candidateNameNoExtNorm = $normalize(pathinfo(basename($candidate), PATHINFO_FILENAME));
+                if (
+                    $candidateBaseNorm === $targetNorm
+                    || ($docNameNorm !== '' && $candidateNameNoExtNorm === $docNameNorm)
+                    || ($docNameNorm !== '' && str_contains($candidateNameNoExtNorm, $docNameNorm))
+                ) {
+                    $realPath = realpath($candidate);
+                    break;
+                }
+            }
+        }
+
+        if ($realPath === false || $uploadsRoot === '' || !str_starts_with(str_replace('\\', '/', $realPath), $uploadsRoot) || !is_file($realPath)) {
+            $segments = array_map('rawurlencode', array_filter(explode('/', $relativePath), static function ($seg) {
+                return $seg !== '';
+            }));
+            $fallbackUrl = Yii::getAlias('@web/' . implode('/', $segments));
+            return $this->redirect($fallbackUrl);
+        }
+
+        return Yii::$app->response->sendFile($realPath, basename($realPath), ['inline' => true]);
+    }
+
 
     public function actionView($id)
     {
@@ -803,35 +859,54 @@ $data = \app\helpers\ModbusHelper::parseEntesMpr45($regs);
         $now = date('Y-m-d H:00:00');
         $lastLog = Sog5EnergyLog::find()
             ->orderBy('log_date DESC')
+            ->asArray()
             ->one();
 
-        if (!$force && $lastLog && $lastLog->log_date === $now) {
+        if (!$force && $lastLog && ($lastLog['log_date'] ?? null) === $now) {
             return;
         }
 
+        $eL1 = $data['e_l1_import_kwh'] ?? ($lastLog['e_l1_kwh'] ?? null);
+        $eL2 = $data['e_l2_import_kwh'] ?? ($lastLog['e_l2_kwh'] ?? null);
+        $eL3 = $data['e_l3_import_kwh'] ?? ($lastLog['e_l3_kwh'] ?? null);
+        $eTotal = ($eL1 !== null && $eL2 !== null && $eL3 !== null)
+            ? ($eL1 + $eL2 + $eL3)
+            : ($lastLog['e_total_kwh'] ?? null);
+
+        $l1ind = $data['e_l1_reactive_ind_kvarh'] ?? ($lastLog['e_l1_reactive_ind_kvarh'] ?? null);
+        $l2ind = $data['e_l2_reactive_ind_kvarh'] ?? ($lastLog['e_l2_reactive_ind_kvarh'] ?? null);
+        $l3ind = $data['e_l3_reactive_ind_kvarh'] ?? ($lastLog['e_l3_reactive_ind_kvarh'] ?? null);
+        $l1cap = $data['e_l1_reactive_cap_kvarh'] ?? ($lastLog['e_l1_reactive_cap_kvarh'] ?? null);
+        $l2cap = $data['e_l2_reactive_cap_kvarh'] ?? ($lastLog['e_l2_reactive_cap_kvarh'] ?? null);
+        $l3cap = $data['e_l3_reactive_cap_kvarh'] ?? ($lastLog['e_l3_reactive_cap_kvarh'] ?? null);
+
+        $qIndTotal = ($l1ind !== null || $l2ind !== null || $l3ind !== null)
+            ? (($l1ind ?? 0) + ($l2ind ?? 0) + ($l3ind ?? 0))
+            : ($lastLog['q_ind_kvarh'] ?? null);
+
+        $qCapTotal = ($l1cap !== null || $l2cap !== null || $l3cap !== null)
+            ? (($l1cap ?? 0) + ($l2cap ?? 0) + ($l3cap ?? 0))
+            : ($lastLog['q_cap_kvarh'] ?? null);
+
         $log = new Sog5EnergyLog();
         $log->log_date = $now;
-        $log->e_l1_kwh = $data['e_l1_import_kwh'] ?? null;
-        $log->e_l2_kwh = $data['e_l2_import_kwh'] ?? null;
-        $log->e_l3_kwh = $data['e_l3_import_kwh'] ?? null;
-        $log->e_total_kwh = ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0);
-        $log->q_ind_kvarh = ($data['e_l1_reactive_ind_kvarh'] ?? 0) + ($data['e_l2_reactive_ind_kvarh'] ?? 0) + ($data['e_l3_reactive_ind_kvarh'] ?? 0);
-        $log->q_cap_kvarh = ($data['e_l1_reactive_cap_kvarh'] ?? 0) + ($data['e_l2_reactive_cap_kvarh'] ?? 0) + ($data['e_l3_reactive_cap_kvarh'] ?? 0);
-        
-        $v1 = floatval($data['e_l1_reactive_ind_kvarh'] ?? 0);
-        $v2 = floatval($data['e_l2_reactive_ind_kvarh'] ?? 0);
-        $v3 = floatval($data['e_l3_reactive_ind_kvarh'] ?? 0);
-        $log->setAttribute('e_l1_reactive_ind_kvarh', $v1);
-        $log->setAttribute('e_l2_reactive_ind_kvarh', $v2);
-        $log->setAttribute('e_l3_reactive_ind_kvarh', $v3);
-        $log->setAttribute('e_l1_reactive_cap_kvarh', floatval($data['e_l1_reactive_cap_kvarh'] ?? 0));
-        $log->setAttribute('e_l2_reactive_cap_kvarh', floatval($data['e_l2_reactive_cap_kvarh'] ?? 0));
-        $log->setAttribute('e_l3_reactive_cap_kvarh', floatval($data['e_l3_reactive_cap_kvarh'] ?? 0));
+        $log->e_l1_kwh = $eL1;
+        $log->e_l2_kwh = $eL2;
+        $log->e_l3_kwh = $eL3;
+        $log->e_total_kwh = $eTotal;
+        $log->q_ind_kvarh = $qIndTotal;
+        $log->q_cap_kvarh = $qCapTotal;
+        $log->setAttribute('e_l1_reactive_ind_kvarh', $l1ind);
+        $log->setAttribute('e_l2_reactive_ind_kvarh', $l2ind);
+        $log->setAttribute('e_l3_reactive_ind_kvarh', $l3ind);
+        $log->setAttribute('e_l1_reactive_cap_kvarh', $l1cap);
+        $log->setAttribute('e_l2_reactive_cap_kvarh', $l2cap);
+        $log->setAttribute('e_l3_reactive_cap_kvarh', $l3cap);
         
         if (!$log->save()) {
             error_log('Sog5EnergyLog save error: ' . json_encode($log->getErrors()));
         } else {
-            error_log('Sog5EnergyLog saved id=' . $log->id . ' l1_ind=' . $v1);
+            error_log('Sog5EnergyLog saved id=' . $log->id . ' e_total=' . ($eTotal ?? 'null'));
         }
 
         $monthAgo = date('Y-m-d H:00:00', strtotime('-35 days'));
@@ -847,24 +922,33 @@ $data = \app\helpers\ModbusHelper::parseEntesMpr45($regs);
         if ($second < 15 || $second > 45) return;
         
         $datetime = date('Y-m-d H:i:00');
-        
-        // En son kayıt var mı kontrol et
-        $lastRaw = $db->createCommand('SELECT log_datetime FROM sog5_energy_logs_raw ORDER BY log_datetime DESC LIMIT 1')->queryOne();
-        if ($lastRaw && $lastRaw['log_datetime'] === $datetime) {
+
+        // Son satırı çek: aynı dakika kontrolü + last-known-good için
+        $lastRaw = $db->createCommand('SELECT * FROM sog5_energy_logs_raw ORDER BY log_datetime DESC LIMIT 1')->queryOne() ?: [];
+        if (($lastRaw['log_datetime'] ?? null) === $datetime) {
             return;
         }
-        
-        $eTotal = ($data['e_l1_import_kwh'] ?? 0) + ($data['e_l2_import_kwh'] ?? 0) + ($data['e_l3_import_kwh'] ?? 0);
-        
+
+        $lkg = function (string $key) use ($data, $lastRaw) {
+            return $data[$key] ?? ($lastRaw[$key] ?? null);
+        };
+
+        $eL1 = $data['e_l1_import_kwh'] ?? null;
+        $eL2 = $data['e_l2_import_kwh'] ?? null;
+        $eL3 = $data['e_l3_import_kwh'] ?? null;
+        $eTotal = ($eL1 !== null && $eL2 !== null && $eL3 !== null)
+            ? ($eL1 + $eL2 + $eL3)
+            : ($lastRaw['e_total_kwh'] ?? null);
+
         $db->createCommand()->insert('sog5_energy_logs_raw', [
             'log_datetime' => $datetime,
             'e_total_kwh' => $eTotal,
-            'e_l1_reactive_ind_kvarh' => $data['e_l1_reactive_ind_kvarh'] ?? 0,
-            'e_l2_reactive_ind_kvarh' => $data['e_l2_reactive_ind_kvarh'] ?? 0,
-            'e_l3_reactive_ind_kvarh' => $data['e_l3_reactive_ind_kvarh'] ?? 0,
-            'e_l1_reactive_cap_kvarh' => $data['e_l1_reactive_cap_kvarh'] ?? 0,
-            'e_l2_reactive_cap_kvarh' => $data['e_l2_reactive_cap_kvarh'] ?? 0,
-            'e_l3_reactive_cap_kvarh' => $data['e_l3_reactive_cap_kvarh'] ?? 0,
+            'e_l1_reactive_ind_kvarh' => $lkg('e_l1_reactive_ind_kvarh'),
+            'e_l2_reactive_ind_kvarh' => $lkg('e_l2_reactive_ind_kvarh'),
+            'e_l3_reactive_ind_kvarh' => $lkg('e_l3_reactive_ind_kvarh'),
+            'e_l1_reactive_cap_kvarh' => $lkg('e_l1_reactive_cap_kvarh'),
+            'e_l2_reactive_cap_kvarh' => $lkg('e_l2_reactive_cap_kvarh'),
+            'e_l3_reactive_cap_kvarh' => $lkg('e_l3_reactive_cap_kvarh'),
         ])->execute();
         
         // Eski kayıtları temizle (son 48 saatten eskilerini sil)
@@ -883,16 +967,16 @@ public function actionSog5Tuketim()
         $yesterdayHour = date('Y-m-d H', strtotime('-24 hours'));
         
 // Bugünkü son veri (dolu)
-        $todayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
+        $todayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 0 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
         
         // Dünkü aynı saat
         $yesterdayHour = date('Y-m-d H', strtotime('-24 hours'));
-        $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime LIKE :yesterday AND e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')
+        $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime LIKE :yesterday AND e_total_kwh > 0 ORDER BY log_datetime DESC LIMIT 1')
             ->bindValue(':yesterday', $yesterdayHour . '%')->queryOne();
         
         // Dünkü aynı saat yoksa en son dünkü veriyi al
         if (!$yesterdayData) {
-            $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime < :today AND e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')
+            $yesterdayData = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE log_datetime < :today AND e_total_kwh > 0 ORDER BY log_datetime DESC LIMIT 1')
                 ->bindValue(':today', date('Y-m-d'))->queryOne();
         }
         
@@ -932,8 +1016,8 @@ public function actionSog5Tuketim()
         $hourlyQCap = 0;
         
         // Raw tablodan saatlik hesapla - son 2 dolu kayıt
-        $rawNow = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
-        $rawPrev = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 1000000 AND log_datetime < :now ORDER BY log_datetime DESC LIMIT 1')
+        $rawNow = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 0 ORDER BY log_datetime DESC LIMIT 1')->queryOne();
+        $rawPrev = $db->createCommand('SELECT * FROM sog5_energy_logs_raw WHERE e_total_kwh > 0 AND log_datetime < :now ORDER BY log_datetime DESC LIMIT 1')
             ->bindValue(':now', $rawNow['log_datetime'] ?? date('Y-m-d H:i:s'))->queryOne();
         
         $hourlyE = null;
@@ -945,8 +1029,10 @@ public function actionSog5Tuketim()
             if ($eDiff > 0 && $eDiff < 1000) {
                 $hourlyE = $eDiff;
                 
-                $qInd = ($rawNow['e_l1_reactive_ind_kvarh'] ?? 0) - ($rawPrev['e_l1_reactive_ind_kvarh'] ?? 0);
-                $qCap = ($rawNow['e_l1_reactive_cap_kvarh'] ?? 0) - ($rawPrev['e_l1_reactive_cap_kvarh'] ?? 0);
+                $qInd = (($rawNow['e_l1_reactive_ind_kvarh'] ?? 0) + ($rawNow['e_l2_reactive_ind_kvarh'] ?? 0) + ($rawNow['e_l3_reactive_ind_kvarh'] ?? 0))
+                    - (($rawPrev['e_l1_reactive_ind_kvarh'] ?? 0) + ($rawPrev['e_l2_reactive_ind_kvarh'] ?? 0) + ($rawPrev['e_l3_reactive_ind_kvarh'] ?? 0));
+                $qCap = (($rawNow['e_l1_reactive_cap_kvarh'] ?? 0) + ($rawNow['e_l2_reactive_cap_kvarh'] ?? 0) + ($rawNow['e_l3_reactive_cap_kvarh'] ?? 0))
+                    - (($rawPrev['e_l1_reactive_cap_kvarh'] ?? 0) + ($rawPrev['e_l2_reactive_cap_kvarh'] ?? 0) + ($rawPrev['e_l3_reactive_cap_kvarh'] ?? 0));
                 $hourlyQInd = ($qInd >= 0 && $qInd < 1000) ? round($qInd, 1) : 0;
                 $hourlyQCap = ($qCap >= 0 && $qCap < 1000) ? round($qCap, 1) : 0;
             }
@@ -1046,12 +1132,12 @@ public function actionSog5Tuketim()
                 $hourEnd = date('Y-m-d H:59:59', strtotime("-{$i} hour"));
                 
                 $log = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 1000000
+                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 0
                     ORDER BY log_date DESC LIMIT 1')
                     ->bindValue(':start', $hour)->bindValue(':end', $hourEnd)->queryOne();
                 
                 $prevLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date < :start AND e_total_kwh > 1000000
+                    WHERE log_date < :start AND e_total_kwh > 0
                     ORDER BY log_date DESC LIMIT 1')
                     ->bindValue(':start', $hour)->queryOne();
                 
@@ -1081,7 +1167,7 @@ public function actionSog5Tuketim()
                 $dayEnd = $day . ' 23:59:59';
                 
                 $logs = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 1000000
+                    WHERE log_date BETWEEN :start AND :end AND e_total_kwh > 0
                     ORDER BY log_date ASC')
                     ->bindValue(':start', $dayStart)->bindValue(':end', $dayEnd)->queryAll();
                 
@@ -1117,12 +1203,12 @@ public function actionSog5Tuketim()
                 $monthEnd = $month . '-31 23:59:59';
                 
                 $firstLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date >= :start AND e_total_kwh > 1000000
+                    WHERE log_date >= :start AND e_total_kwh > 0
                     ORDER BY log_date ASC LIMIT 1')
                     ->bindValue(':start', $monthStart)->queryOne();
                 
                 $lastLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date <= :end AND e_total_kwh > 1000000
+                    WHERE log_date <= :end AND e_total_kwh > 0
                     ORDER BY log_date DESC LIMIT 1')
                     ->bindValue(':end', $monthEnd)->queryOne();
                 
@@ -1152,12 +1238,12 @@ public function actionSog5Tuketim()
                 $yearEnd = $year . '-12-31 23:59:59';
                 
                 $firstLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date >= :start AND e_total_kwh > 1000000
+                    WHERE log_date >= :start AND e_total_kwh > 0
                     ORDER BY log_date ASC LIMIT 1')
                     ->bindValue(':start', $yearStart)->queryOne();
                 
                 $lastLog = $db->createCommand('SELECT * FROM sog5_energy_logs 
-                    WHERE log_date <= :end AND e_total_kwh > 1000000
+                    WHERE log_date <= :end AND e_total_kwh > 0
                     ORDER BY log_date DESC LIMIT 1')
                     ->bindValue(':end', $yearEnd)->queryOne();
                 

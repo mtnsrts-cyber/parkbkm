@@ -154,26 +154,32 @@ class Sog5Controller extends Controller
             ? ($eL1 + $eL2 + $eL3)
             : ($lastRaw['e_total_kwh'] ?? null);
 
-        Yii::$app->db->createCommand()->insert('sog5_energy_logs_raw', [
-            'log_datetime'            => $datetime,
-            'e_total_kwh'             => $eTotal,
-            'e_l1_reactive_ind_kvarh' => $lkg('e_l1_reactive_ind_kvarh'),
-            'e_l2_reactive_ind_kvarh' => $lkg('e_l2_reactive_ind_kvarh'),
-            'e_l3_reactive_ind_kvarh' => $lkg('e_l3_reactive_ind_kvarh'),
-            'e_l1_reactive_cap_kvarh' => $lkg('e_l1_reactive_cap_kvarh'),
-            'e_l2_reactive_cap_kvarh' => $lkg('e_l2_reactive_cap_kvarh'),
-            'e_l3_reactive_cap_kvarh' => $lkg('e_l3_reactive_cap_kvarh'),
-        ])->execute();
+        try {
+            Yii::$app->db->createCommand()->insert('sog5_energy_logs_raw', [
+                'log_datetime'            => $datetime,
+                'e_total_kwh'             => $eTotal,
+                'e_l1_reactive_ind_kvarh' => $lkg('e_l1_reactive_ind_kvarh'),
+                'e_l2_reactive_ind_kvarh' => $lkg('e_l2_reactive_ind_kvarh'),
+                'e_l3_reactive_ind_kvarh' => $lkg('e_l3_reactive_ind_kvarh'),
+                'e_l1_reactive_cap_kvarh' => $lkg('e_l1_reactive_cap_kvarh'),
+                'e_l2_reactive_cap_kvarh' => $lkg('e_l2_reactive_cap_kvarh'),
+                'e_l3_reactive_cap_kvarh' => $lkg('e_l3_reactive_cap_kvarh'),
+            ])->execute();
 
-        file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', date('Y-m-d H:i:s') . ' Inserted: ' . $datetime . PHP_EOL, FILE_APPEND);
+            file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', date('Y-m-d H:i:s') . ' Inserted: ' . $datetime . PHP_EOL, FILE_APPEND);
 
-        // Önceki saatin verisini sog5_energy_logs'a aktar (temizlikten önce)
-        $this->migrateHourlyLogs();
+            // Önceki saatin verisini sog5_energy_logs'a aktar (temizlikten önce)
+            $this->migrateHourlyLogs();
 
-        // Eski kayıtları temizle (48 saatten eski)
-        $cleanup = date('Y-m-d H:i:00', strtotime('-48 hours'));
-        Yii::$app->db->createCommand('DELETE FROM sog5_energy_logs_raw WHERE log_datetime < :cleanup')
-            ->bindValue(':cleanup', $cleanup)->execute();
+            // Eski kayıtları temizle (48 saatten eski)
+            $cleanup = date('Y-m-d H:i:00', strtotime('-48 hours'));
+            Yii::$app->db->createCommand('DELETE FROM sog5_energy_logs_raw WHERE log_datetime < :cleanup')
+                ->bindValue(':cleanup', $cleanup)->execute();
+        } catch (\Throwable $e) {
+            $msg = date('Y-m-d H:i:s') . ' logSog5Raw ERROR: ' . $e->getMessage();
+            file_put_contents('C:\xampp\htdocs\basic\logs\sog5_debug.log', $msg . PHP_EOL, FILE_APPEND);
+            Yii::error($msg, __METHOD__);
+        }
     }
     
     private function migrateHourlyLogs()

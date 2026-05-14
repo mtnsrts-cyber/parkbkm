@@ -369,13 +369,13 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
 var sog5Polling = false;
 var sog5Timer = null;
 var sog5Interval = 30000;
-var sog5ApiUrl = '/basic/web/index.php?r=ekipman/sog5-veri';
+var sog5ApiUrl = <?= json_encode(Url::to(['/ekipman/sog5-veri'])) ?>;
 
 var analizorPolling = false;
 var analizorTimer = null;
 var pollInterval = 30000;
 var currentId = <?= json_encode($aktifId) ?>;
-var analizorApiUrl = '/basic/web/index.php?r=ekipman/analizor-veri&id=' + encodeURIComponent(currentId);
+var analizorApiUrl = <?= json_encode(Url::to(['/ekipman/analizor-veri'])) ?> + '&id=' + encodeURIComponent(currentId);
 
 var tuketimPolling = false;
 var tuketimTimer = null;
@@ -504,7 +504,7 @@ window.analizorPoll = function() {
 function sog5TuketimPoll() {
     if (!tuketimPolling) return;
 
-    fetch('/basic/web/index.php?r=ekipman/sog5-tuketim')
+    fetch(<?= json_encode(Url::to(['/ekipman/sog5-tuketim'])) ?>)
         .then(function(r) { return r.json(); })
         .then(function(json) {
             if (!tuketimPolling) return;
@@ -557,7 +557,7 @@ function sog5TuketimPoll() {
 function loadGrafik(type) {
     var containerId = type === 'hourly' ? 'chart-hourly-container' : (type === 'daily' ? 'chart-daily-container' : 'chart-monthly-container');
     
-    fetch('/basic/web/index.php?r=ekipman/sog5-grafik&type=' + type)
+    fetch(<?= json_encode(Url::to(['/ekipman/sog5-grafik'])) ?> + '&type=' + type)
         .then(function(r) { return r.json(); })
         .then(function(json) {
             if (json.success && json.data) {
