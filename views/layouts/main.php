@@ -18,7 +18,7 @@ AppAsset::register($this);
 $this->registerJs("var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle=\\'tooltip\\']'));tooltipTriggerList.forEach(function (tooltipTriggerEl) {new bootstrap.Tooltip(tooltipTriggerEl);});");
 
 $this->registerCsrfMetaTags();
-$this->registerMetaTag(['http-equiv' => 'Content-Security-Policy', 'content' => "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';"], 'http-equiv');
+$this->registerMetaTag(['http-equiv' => 'Content-Security-Policy', 'content' => "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://code.jquery.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:;"], 'http-equiv');
 $this->registerMetaTag(['charset' => Yii::$app->charset], 'charset');
 $this->registerMetaTag(['name' => 'viewport', 'content' => 'width=device-width, initial-scale=1, shrink-to-fit=no']);
 $this->registerMetaTag(['name' => 'description', 'content' => $this->params['meta_description'] ?? '']);
@@ -81,6 +81,7 @@ $navItems = [
     // ['label' => 'Atölye İş Listesi', 'url' => ['/islistesi/index']],
     // ['label' => 'Stoklar', 'url' => ['/stok/index']],
     ['label' => 'Ekipmanlar', 'url' => ['/ekipman/index']],
+    ['label' => 'Tersane Kroki', 'url' => ['/site/map']],
     ['label' => 'Enerji İzleme', 'url' => ['/site/energy']],
     ];
 

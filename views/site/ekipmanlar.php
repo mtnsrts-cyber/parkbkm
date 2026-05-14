@@ -83,8 +83,8 @@ Modal::begin([
 <?php Modal::end(); ?>
 
 <?php
-$this->registerCssFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
-$this->registerJsFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', ['depends' => [\yii\web\JqueryAsset::class]]);
+$this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
+$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['depends' => [\yii\web\JqueryAsset::class]]);
 ?>
 
 <?php

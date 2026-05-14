@@ -8,8 +8,8 @@ $this->title = 'Tersane Kroki';
 <div id="map" style="height:80vh; width:100%;"></div>
 
 <?php
-$this->registerCssFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
-$this->registerJsFile('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', ['position' => \yii\web\View::POS_HEAD]);
+$this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
+$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['position' => \yii\web\View::POS_HEAD]);
 
 $mapImage = Yii::getAlias('@web/images/SahaPano.png');
 $parkYuzerImage = Yii::getAlias('@web/images/ParkYuzerHavuz.png');

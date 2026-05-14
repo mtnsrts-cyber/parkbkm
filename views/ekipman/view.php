@@ -60,12 +60,11 @@ $this->params['breadcrumbs'][] = $this->title;
 
 // Asset'leri manuel ekleyin
 $this->registerCssFile("https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css");
-$this->registerJsFile("https://code.jquery.com/jquery-3.6.0.min.js", ['position' => \yii\web\View::POS_HEAD]);
 $this->registerJsFile("https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js");
 
 // Leaflet
-$this->registerJsFile("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", ['depends' => [\yii\web\JqueryAsset::class]]);
-$this->registerCssFile("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['depends' => [\yii\web\JqueryAsset::class]]);
+$this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
 
 // RESİM YOLU KONTROLÜ
 $imageUrl = Yii::getAlias('@web/images/SahaPano.png');
@@ -1256,6 +1255,8 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    var konumMap = null;
+
     // Tab functionality
     var tabTriggers = [].slice.call(document.querySelectorAll('#ekipmanTab a'));
     tabTriggers.forEach(function(tabTriggerEl) {
@@ -1284,10 +1285,16 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
 function initMap() {
+    if (konumMap) {
+        setTimeout(function() {
+            konumMap.invalidateSize();
+        }, 50);
+        return;
+    }
 
     console.log('Initializing map...');
 
-    var map = L.map('map', {
+    konumMap = L.map('map', {
         crs: L.CRS.Simple,
         minZoom: -2,
         maxZoom: 5,
@@ -1297,7 +1304,7 @@ function initMap() {
     var bounds = [[0, 0], [<?= $displayHeight ?>, <?= $displayWidth ?>]];
 
     // Tek overlay: ekipmana göre seçilen pano (Saha veya ParkYuzerHavuz)
-    L.imageOverlay('<?= $displayImage ?>', bounds).addTo(map);
+    L.imageOverlay('<?= $displayImage ?>', bounds).addTo(konumMap);
 
     var isAdmin = <?= (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin') ? 'true' : 'false' ?>;
 
@@ -1306,10 +1313,10 @@ function initMap() {
     marker.bindPopup("<b><?= addslashes($model->MALZEMENIN_TANIMI) ?><br><?= addslashes($model->EKIPMAN_YERI) ?></b>");
 
     // Marker'ı doğrudan haritaya ekle
-    marker.addTo(map);
+    marker.addTo(konumMap);
 
     // Marker konumuna zoomla ve merkeze al
-    map.setView([<?= $markerY ?>, <?= $markerX ?>], 1);
+    konumMap.setView([<?= $markerY ?>, <?= $markerX ?>], 1);
 
     // 🔥 Marker hareket edince gizli alanları güncelle
     if (isAdmin) {
@@ -1375,15 +1382,15 @@ function initMap() {
             }
         });
 
-        map.addControl(new saveControl());
+        konumMap.addControl(new saveControl());
     }
 
     console.log("Map initialized.");
 }
 
-    if (this.id === 'konum-tab') {
-         setTimeout(initMap, 100);
-}
+    if (document.getElementById('konum-tab') && document.getElementById('konum-tab').classList.contains('active')) {
+        setTimeout(initMap, 100);
+    }
 
     
    
