@@ -20,6 +20,7 @@ use yii\helpers\FileHelper;
 use yii\web\Response;
 use yii\web\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 
@@ -31,12 +32,20 @@ class EkipmanController extends Controller
     return [
         'access' => [
             'class' => \yii\filters\AccessControl::class,
-            'only' => ['create','update','delete','hurdaya-ayir','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','enerji-kaynagi-aktar','analizor-create','analizor-update','analizor-delete'],
+            'only' => ['create','update','delete','hurdaya-ayir','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','enerji-kaynagi-aktar','toplu-aktar','analizor-create','analizor-update','analizor-delete'],
             'rules' => [
                 [
                     'allow' => true,
                     'roles' => ['@'], // sadece login olan
                     'actions' => ['create', 'update', 'delete', 'analizor-create', 'analizor-update', 'analizor-delete'],
+                ],
+                [
+                    'allow' => true,
+                    'roles' => ['@'],
+                    'actions' => ['toplu-aktar'],
+                    'matchCallback' => function () {
+                        return !Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin';
+                    },
                 ],
                 [
                     'allow' => true,
@@ -60,6 +69,7 @@ class EkipmanController extends Controller
                 'tanitim-foto-yukle' => ['post'],
                 'tanitim-foto-sil' => ['post'],
                 'enerji-kaynagi-aktar' => ['post'],
+                'toplu-aktar' => ['post'],
             ],
         ],
     ];
@@ -206,11 +216,21 @@ public function actionExportPdf()
             'sort' => false,
         ]);
 
+        $todayStr = date('Y-m-d');
         $nextPeriyodikKontrol = PeriyodikKontrol::find()
             ->where(['ekipman_id' => $model->id])
             ->andWhere(['IS NOT', 'gelecek_kontrol_tarihi', null])
+            ->andWhere(['>=', 'gelecek_kontrol_tarihi', $todayStr])
             ->orderBy(['gelecek_kontrol_tarihi' => SORT_ASC])
             ->one();
+
+        if ($nextPeriyodikKontrol === null) {
+            $nextPeriyodikKontrol = PeriyodikKontrol::find()
+                ->where(['ekipman_id' => $model->id])
+                ->andWhere(['IS NOT', 'gelecek_kontrol_tarihi', null])
+                ->orderBy(['gelecek_kontrol_tarihi' => SORT_DESC])
+                ->one();
+        }
 
         $dokumanlar = EkipmanDokuman::find()
             ->where(['ekipman_kodu' => $model->id])
@@ -359,8 +379,18 @@ public function actionExportPdf()
                 return $this->redirect(['view', 'id' => $model->id, '#' => 'dokumanlar']);
             }
             $hedefKlasor = Yii::getAlias('@app/web/uploads/teknik-dokumanlar/svg');
-            $safeFileName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $svgFile->baseName) . '.svg';
-            $fullPath = $hedefKlasor . '/' . $safeFileName;
+            if (!is_dir($hedefKlasor)) {
+                \yii\helpers\FileHelper::createDirectory($hedefKlasor);
+            }
+
+            $existingFileName = $this->findExistingUploadedFileByHash($svgFile, $hedefKlasor);
+            if ($existingFileName !== null) {
+                $this->saveDokumanRecord($model->id, 'ELEKTRİK PROJESİ', 'teknik-dokumanlar/svg/' . $existingFileName);
+                Yii::$app->session->setFlash('info', 'Aynı içerikte dosya sunucuda zaten var. Yeni kopya yüklenmedi, mevcut dosya ekipmana bağlandı.');
+                return $this->redirect(['view', 'id' => $model->id, '#' => 'dokumanlar']);
+            }
+
+            [$safeFileName, $fullPath] = $this->buildUniqueUploadPath($svgFile, $hedefKlasor, 'svg');
             if ($svgFile->saveAs($fullPath)) {
                 $dosyaYoluSvg = 'teknik-dokumanlar/svg/' . $safeFileName;
                 $this->saveDokumanRecord($model->id, 'ELEKTRİK PROJESİ', $dosyaYoluSvg);
@@ -392,16 +422,16 @@ public function actionExportPdf()
                 \yii\helpers\FileHelper::createDirectory($absKlasor);
             }
 
-            $safeFileName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $uploadedFile->baseName) . '.' . $ext;
-            $fullPath = $absKlasor . '/' . $safeFileName;
-
-            // Aynı isimde dosya varsa numaralandır
-            $counter = 1;
-            while (file_exists($fullPath)) {
-                $safeFileName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $uploadedFile->baseName) . '_' . $counter . '.' . $ext;
-                $fullPath = $absKlasor . '/' . $safeFileName;
-                $counter++;
+            $existingFileName = $this->findExistingUploadedFileByHash($uploadedFile, $absKlasor);
+            if ($existingFileName !== null) {
+                $dosyaYolu = $hedefKlasor . '/' . $existingFileName;
+                $turForDb = ($ext === 'svg') ? 'ELEKTRİK PROJESİ' : $dokumanTuru;
+                $this->saveDokumanRecord($model->id, $turForDb, $dosyaYolu);
+                Yii::$app->session->setFlash('info', 'Aynı içerikte dosya sunucuda zaten var. Yeni kopya yüklenmedi, mevcut dosya ekipmana bağlandı.');
+                return $this->redirect(['view', 'id' => $model->id, '#' => 'dokumanlar']);
             }
+
+            [$safeFileName, $fullPath] = $this->buildUniqueUploadPath($uploadedFile, $absKlasor, $ext);
 
             if ($uploadedFile->saveAs($fullPath)) {
                 $dosyaYolu = $hedefKlasor . '/' . $safeFileName;
@@ -434,9 +464,70 @@ public function actionExportPdf()
             return $this->redirect(['view', 'id' => $model->id, '#' => 'dokumanlar']);
         }
 
-        $this->saveDokumanRecord($model->id, $dokumanTuru, $dosyaYolu);
+        $turForDb = strtolower(pathinfo($dosyaYolu, PATHINFO_EXTENSION)) === 'svg'
+            ? 'ELEKTRİK PROJESİ'
+            : $dokumanTuru;
+        $this->saveDokumanRecord($model->id, $turForDb, $dosyaYolu);
         Yii::$app->session->setFlash('success', 'Döküman ekipmana eklendi.');
         return $this->redirect(['view', 'id' => $model->id, '#' => 'dokumanlar']);
+    }
+
+    private function buildSafeUploadFileName(\yii\web\UploadedFile $file, string $extension): string
+    {
+        $baseName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $file->baseName) ?: 'dosya';
+        $baseName = trim((string)$baseName, '._-');
+
+        return ($baseName !== '' ? $baseName : 'dosya') . '.' . $extension;
+    }
+
+    private function buildUniqueUploadPath(\yii\web\UploadedFile $file, string $folder, string $extension): array
+    {
+        $safeFileName = $this->buildSafeUploadFileName($file, $extension);
+        $baseName = pathinfo($safeFileName, PATHINFO_FILENAME);
+        $fullPath = $folder . '/' . $safeFileName;
+
+        $counter = 1;
+        while (file_exists($fullPath)) {
+            $safeFileName = $baseName . '_' . $counter . '.' . $extension;
+            $fullPath = $folder . '/' . $safeFileName;
+            $counter++;
+        }
+
+        return [$safeFileName, $fullPath];
+    }
+
+    private function findExistingUploadedFileByHash(\yii\web\UploadedFile $uploadedFile, string $folder): ?string
+    {
+        if (!is_file($uploadedFile->tempName)) {
+            return null;
+        }
+
+        $uploadedHash = @hash_file('sha256', $uploadedFile->tempName);
+        if ($uploadedHash === false) {
+            return null;
+        }
+
+        $extension = strtolower($uploadedFile->extension);
+        foreach (new \DirectoryIterator($folder) as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+
+            if (strtolower($file->getExtension()) !== $extension) {
+                continue;
+            }
+
+            if ($file->getSize() !== $uploadedFile->size) {
+                continue;
+            }
+
+            $existingHash = @hash_file('sha256', $file->getPathname());
+            if ($existingHash !== false && hash_equals($uploadedHash, $existingHash)) {
+                return $file->getFilename();
+            }
+        }
+
+        return null;
     }
 
     private function saveDokumanRecord(string $ekipmanId, string $dokumanTuru, string $dosyaYolu): void
@@ -678,6 +769,281 @@ public function actionExportPdf()
         }
 
         return $this->redirect(['index']);
+    }
+
+    public function actionTopluAktar()
+    {
+        $file = UploadedFile::getInstanceByName('ekipman_excel');
+        if ($file === null) {
+            Yii::$app->session->setFlash('error', 'Lütfen Excel veya CSV dosyası seçiniz.');
+            return $this->redirect(['index']);
+        }
+
+        $extension = strtolower((string)$file->extension);
+        if (!in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
+            Yii::$app->session->setFlash('error', 'Sadece .xlsx, .xls veya .csv dosyası yüklenebilir.');
+            return $this->redirect(['index']);
+        }
+
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            if ($extension === 'csv') {
+                $reader = IOFactory::createReader('Csv');
+                $reader->setDelimiter($this->detectEkipmanCsvDelimiter($file->tempName));
+                $reader->setInputEncoding('UTF-8');
+                $spreadsheet = $reader->load($file->tempName);
+            } else {
+                $spreadsheet = IOFactory::load($file->tempName);
+            }
+
+            $sheet = $spreadsheet->getActiveSheet();
+            $highestRow = $sheet->getHighestDataRow();
+            $highestColumn = $sheet->getHighestDataColumn();
+            $rows = $sheet->rangeToArray('A1:' . $highestColumn . $highestRow, null, true, true, true);
+
+            $headerRowNumber = $this->findEkipmanImportHeaderRow($rows);
+            if ($headerRowNumber === null) {
+                throw new \RuntimeException('Başlık satırı bulunamadı. En az Ekipman Kodu / id başlığı olmalı.');
+            }
+
+            $columnMap = $this->buildEkipmanImportColumnMap($rows[$headerRowNumber]);
+            if (empty($columnMap['id'])) {
+                throw new \RuntimeException('Zorunlu başlık eksik: Ekipman Kodu / id.');
+            }
+
+            $created = 0;
+            $existing = 0;
+            $skipped = 0;
+            $errors = [];
+            $importIds = [];
+
+            for ($rowNumber = $headerRowNumber + 1; $rowNumber <= $highestRow; $rowNumber++) {
+                $row = $rows[$rowNumber] ?? [];
+                $id = trim((string)$this->getEkipmanImportCellValue($row, $columnMap, 'id'));
+                if ($id !== '') {
+                    $importIds[$id] = true;
+                }
+            }
+
+            for ($rowNumber = $headerRowNumber + 1; $rowNumber <= $highestRow; $rowNumber++) {
+                $row = $rows[$rowNumber] ?? [];
+                if ($this->isEkipmanImportRowEmpty($row)) {
+                    continue;
+                }
+
+                $id = trim((string)$this->getEkipmanImportCellValue($row, $columnMap, 'id'));
+                if ($id === '') {
+                    $skipped++;
+                    $errors[] = $rowNumber . '. satır atlandı: Ekipman kodu boş.';
+                    continue;
+                }
+
+                if (Ekipman::findOne($id) !== null) {
+                    $existing++;
+                    continue;
+                }
+
+                $model = new Ekipman();
+                $model->id = $id;
+
+                foreach ($columnMap as $attribute => $column) {
+                    if ($attribute === 'id') {
+                        continue;
+                    }
+
+                    $value = $this->getEkipmanImportCellValue($row, $columnMap, $attribute);
+                    if ($value === null) {
+                        continue;
+                    }
+
+                    $value = trim((string)$value);
+                    if (in_array($attribute, ['ENLEM', 'BOYLAM'], true)) {
+                        $model->$attribute = $this->normalizeEkipmanImportNumber($value);
+                    } elseif ($attribute === 'IMAL_YILI') {
+                        $model->$attribute = $value === '' ? null : (int)$value;
+                    } elseif ($attribute === 'DURUM') {
+                        $model->$attribute = $value === '' ? 'AKTIF' : strtoupper($value);
+                    } elseif ($attribute === 'MIKTAR') {
+                        $model->$attribute = $value === '' ? null : $value;
+                    } else {
+                        $model->$attribute = $value === '' ? null : $value;
+                    }
+                }
+
+                if (empty($model->DURUM)) {
+                    $model->DURUM = 'AKTIF';
+                }
+
+                if (!empty($model->besleme_kaynagi_id)) {
+                    if ((string)$model->besleme_kaynagi_id === (string)$model->id) {
+                        $skipped++;
+                        $errors[] = $rowNumber . '. satır atlandı: Ekipman kendi enerji kaynağı olamaz (' . $id . ').';
+                        continue;
+                    }
+                    if (Ekipman::findOne((string)$model->besleme_kaynagi_id) === null && !isset($importIds[(string)$model->besleme_kaynagi_id])) {
+                        $skipped++;
+                        $errors[] = $rowNumber . '. satır atlandı: Enerji kaynağı bulunamadı (' . $model->besleme_kaynagi_id . ').';
+                        continue;
+                    }
+                }
+
+                if (!$model->save()) {
+                    $skipped++;
+                    $message = implode(' | ', array_map(static function ($items) {
+                        return implode(', ', $items);
+                    }, $model->getErrors()));
+                    $errors[] = $rowNumber . '. satır kaydedilemedi: ' . $message;
+                    continue;
+                }
+
+                $created++;
+            }
+
+            $transaction->commit();
+            Yii::$app->cache->delete('site.map.items.v1');
+
+            $message = "Toplu ekipman aktarımı tamamlandı. Yeni: {$created}, mevcut olduğu için atlanan: {$existing}, hatalı atlanan: {$skipped}.";
+            if (!empty($errors)) {
+                $message .= '<br>İlk uyarılar:<br>' . implode('<br>', array_slice(array_map('htmlspecialchars', $errors), 0, 10));
+            }
+            Yii::$app->session->setFlash($skipped > 0 ? 'warning' : 'success', $message);
+        } catch (\Throwable $e) {
+            $transaction->rollBack();
+            Yii::$app->session->setFlash('error', 'Toplu ekipman aktarımı sırasında hata oluştu: ' . $e->getMessage());
+        }
+
+        return $this->redirect(['index']);
+    }
+
+    private function findEkipmanImportHeaderRow(array $rows): ?int
+    {
+        foreach ($rows as $rowNumber => $row) {
+            $map = $this->buildEkipmanImportColumnMap($row);
+            if (!empty($map['id'])) {
+                return (int)$rowNumber;
+            }
+        }
+
+        return null;
+    }
+
+    private function buildEkipmanImportColumnMap(array $headerRow): array
+    {
+        $aliases = [
+            'id' => ['id', 'kodu', 'kod', 'ekipman kodu', 'ekipman id'],
+            'MALZEMENIN_TANIMI' => ['malzemenin tanimi', 'malzemenin tanımı', 'tanim', 'tanım', 'tanimi', 'tanımı'],
+            'EKIPMAN_YERI' => ['ekipman yeri', 'yer', 'bulundugu yer', 'bulunduğu yer'],
+            'EKIPMAN_CINSI' => ['ekipman cinsi', 'cinsi'],
+            'EKIPMAN_TURU' => ['ekipman turu', 'ekipman türü', 'turu', 'türü'],
+            'MARKA' => ['marka'],
+            'SERI_NO' => ['seri no', 'seri numarasi', 'seri numarası'],
+            'TIP' => ['tip'],
+            'VARSA_DIGER_TANITICI_BILGI' => ['varsa diger tanitici bilgi', 'varsa diğer tanıtıcı bilgi', 'diger bilgi', 'diğer bilgi'],
+            'MIKTAR' => ['miktar', 'adet'],
+            'IMAL_YILI' => ['imal yili', 'imal yılı', 'yil', 'yıl'],
+            'NOTLAR' => ['notlar', 'not'],
+            'DURUM' => ['durum', 'aktif hurda', 'durum aktif hurda'],
+            'ENLEM' => ['enlem', 'latitude'],
+            'BOYLAM' => ['boylam', 'longitude'],
+            'TANITIM_FOTO' => ['tanitim fotografi', 'tanıtım fotoğrafı', 'tanitim foto', 'tanıtım foto'],
+            'besleme_kaynagi_id' => ['besleme kaynagi', 'besleme kaynağı', 'enerji kaynagi', 'enerji kaynağı'],
+            'salter_kodu' => ['salter kodu', 'şalter kodu'],
+            'salter_akim' => ['salter akim', 'şalter akım'],
+        ];
+
+        $normalizedAliases = [];
+        foreach ($aliases as $attribute => $labels) {
+            foreach ($labels as $label) {
+                $normalizedAliases[] = [
+                    'attribute' => $attribute,
+                    'label' => $this->normalizeEkipmanImportHeader($label),
+                ];
+            }
+        }
+
+        usort($normalizedAliases, static function ($a, $b) {
+            return strlen($b['label']) <=> strlen($a['label']);
+        });
+
+        $map = [];
+        foreach ($headerRow as $column => $label) {
+            $normalizedLabel = $this->normalizeEkipmanImportHeader((string)$label);
+            if ($normalizedLabel === '') {
+                continue;
+            }
+
+            foreach ($normalizedAliases as $candidate) {
+                if ($normalizedLabel === $candidate['label']) {
+                    $map[$candidate['attribute']] = $column;
+                    continue 2;
+                }
+            }
+
+            foreach ($normalizedAliases as $candidate) {
+                if (strlen($candidate['label']) > 5 && preg_match('/(^| )' . preg_quote($candidate['label'], '/') . '( |$)/', $normalizedLabel)) {
+                    $map[$candidate['attribute']] = $column;
+                    continue 2;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    private function normalizeEkipmanImportHeader(string $value): string
+    {
+        $value = strtr($value, [
+            'İ' => 'I', 'I' => 'I', 'Ğ' => 'G', 'Ü' => 'U', 'Ş' => 'S', 'Ö' => 'O', 'Ç' => 'C',
+            'ı' => 'i', 'ğ' => 'g', 'ü' => 'u', 'ş' => 's', 'ö' => 'o', 'ç' => 'c',
+        ]);
+        $value = trim(mb_strtolower($value, 'UTF-8'));
+        $value = preg_replace('/[^a-z0-9]+/u', ' ', $value);
+
+        return trim((string)$value);
+    }
+
+    private function detectEkipmanCsvDelimiter(string $filePath): string
+    {
+        $handle = fopen($filePath, 'rb');
+        $line = $handle ? (string)fgets($handle) : '';
+        if ($handle) {
+            fclose($handle);
+        }
+
+        $delimiters = [',' => substr_count($line, ','), ';' => substr_count($line, ';'), "\t" => substr_count($line, "\t")];
+        arsort($delimiters);
+
+        return (string)array_key_first($delimiters);
+    }
+
+    private function isEkipmanImportRowEmpty(array $row): bool
+    {
+        foreach ($row as $value) {
+            if (trim((string)$value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function getEkipmanImportCellValue(array $row, array $columnMap, string $attribute)
+    {
+        if (empty($columnMap[$attribute])) {
+            return null;
+        }
+
+        return $row[$columnMap[$attribute]] ?? null;
+    }
+
+    private function normalizeEkipmanImportNumber(string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        return str_replace(',', '.', $value);
     }
 
     private function getTeknikDosyaSecenekleri(): array

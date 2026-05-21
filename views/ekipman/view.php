@@ -30,6 +30,8 @@ if (!empty($model->TANITIM_FOTO)) {
 }
 
 $canManageTanitimFoto = !Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true);
+$isAdmin = !Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin';
+$periyodikGraceDays = 30;
 
 if ($canManageTanitimFoto) {
     $this->registerJs("(function(){
@@ -281,6 +283,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
         <div class="tab-pane fade show active" id="detaylar" role="tabpanel">
             <?= DetailView::widget([
                 'model' => $model,
+                'formatter' => ['class' => yii\i18n\Formatter::class, 'nullDisplay' => ''],
                 'options' => ['class' => 'table table-sm table-hover table-dark'],
                 'attributes' => [
                     'id',
@@ -320,11 +323,18 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 $son = new \DateTime($nextPeriyodikKontrol->son_kontrol_tarihi);
                             }
 
-                            if ($gelecek <= $today) {
-                                $remainingDays = 0;
+                            $graceEnd = (clone $gelecek)->modify('+' . $periyodikGraceDays . ' days');
+
+                            if ($today > $graceEnd) {
+                                $overdueDays = $graceEnd->diff($today)->days;
                                 $percent = 100;
                                 $barClass = 'bg-danger';
-                                $label = 'GECİKMİŞ';
+                                $label = 'GECİKMİŞ: ' . $overdueDays . ' gün';
+                            } elseif ($today > $gelecek) {
+                                $graceRemainingDays = $today->diff($graceEnd)->days;
+                                $percent = max(5, min(100, round((($periyodikGraceDays - $graceRemainingDays) / $periyodikGraceDays) * 100)));
+                                $barClass = 'bg-warning';
+                                $label = 'Tolerans: ' . $graceRemainingDays . ' gün';
                             } else {
                                 if ($son) {
                                     $totalDays = max(1, $son->diff($gelecek)->days);
@@ -335,11 +345,8 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 $remainingDays = $today->diff($gelecek)->days;
                                 $completedDays = max(0, $totalDays - $remainingDays);
                                 $percent = max(5, min(100, round($completedDays * 100 / $totalDays)));
-                                $fractionRemaining = $remainingDays / $totalDays;
 
-                                if ($fractionRemaining <= 0.2) {
-                                    $barClass = 'bg-danger';
-                                } elseif ($fractionRemaining <= 0.5) {
+                                if ($remainingDays <= 30) {
                                     $barClass = 'bg-warning';
                                 } else {
                                     $barClass = 'bg-success';
@@ -364,19 +371,20 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
 
                 <?= GridView::widget([
                     'dataProvider' => $periyodikKontrolDataProvider,
+                    'formatter' => ['class' => yii\i18n\Formatter::class, 'nullDisplay' => ''],
                     'tableOptions' => ['class' => 'table table-sm table-striped table-bordered d-none d-md-table'],
                     'rowOptions' => function ($model) {
                         if (!empty($model->gelecek_kontrol_tarihi)) {
                             try {
                                 $gelecek = new \DateTime($model->gelecek_kontrol_tarihi);
                                 $today = new \DateTime('today');
+                                $graceEnd = (clone $gelecek)->modify('+30 days');
 
-                                if ($gelecek < $today) {
+                                if ($today > $graceEnd) {
                                     return ['class' => 'table-danger'];
                                 }
 
-                                $diffDays = $today->diff($gelecek)->days;
-                                if ($diffDays <= 30) {
+                                if ($today > $gelecek || $today->diff($gelecek)->days <= 30) {
                                     return ['class' => 'table-warning'];
                                 }
 
@@ -387,7 +395,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                         }
                         return [];
                     },
-                    'columns' => [
+                    'columns' => array_filter([
                         'cihaz_adi',
                         'simkal_kodu',
                         [
@@ -398,7 +406,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 if ($raporNo === '') {
                                     return '';
                                 }
-                                if (preg_match('/(\d{6}\.\d{4}\.\d{1,2})/', $raporNo, $m)) {
+                                if (preg_match('/(\d{6}\.\d{4}\.\d+)/', $raporNo, $m)) {
                                     $base = $m[1];
                                 } else {
                                     $base = $raporNo;
@@ -430,7 +438,24 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                             'attribute' => 'gelecek_kontrol_tarihi',
                             'format' => ['date', 'php:d.m.Y'],
                         ],
-                    ],
+                        $isAdmin ? [
+                            'label' => 'İşlem',
+                            'format' => 'raw',
+                            'contentOptions' => ['class' => 'text-nowrap'],
+                            'value' => function ($model) {
+                                $return = Url::current();
+                                return Html::a('Düzenle', ['site/periyodik-kontrol-update', 'id' => $model->id, 'return' => $return], [
+                                    'class' => 'btn btn-sm btn-outline-info mr-1',
+                                    'data-pjax' => 0,
+                                ]) . Html::a('Sil', ['site/periyodik-kontrol-delete', 'id' => $model->id, 'return' => $return], [
+                                    'class' => 'btn btn-sm btn-outline-danger',
+                                    'data-method' => 'post',
+                                    'data-confirm' => 'Bu periyodik kontrol kaydı silinsin mi?',
+                                    'data-pjax' => 0,
+                                ]);
+                            },
+                        ] : null,
+                    ]),
                     'summary' => '',
                     'emptyText' => 'Bu ekipman için periyodik kontrol kaydı bulunmamaktadır.',
                 ]) ?>
@@ -450,9 +475,10 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 if (!empty($pk->gelecek_kontrol_tarihi)) {
                                     $pkGelecek = new \DateTime($pk->gelecek_kontrol_tarihi);
                                     $pkToday = new \DateTime('today');
-                                    if ($pkGelecek < $pkToday) {
+                                    $pkGraceEnd = (clone $pkGelecek)->modify('+30 days');
+                                    if ($pkToday > $pkGraceEnd) {
                                         $pkBorder = 'border-danger';
-                                    } elseif ($pkToday->diff($pkGelecek)->days <= 30) {
+                                    } elseif ($pkToday > $pkGelecek || $pkToday->diff($pkGelecek)->days <= 30) {
                                         $pkBorder = 'border-warning';
                                     } else {
                                         $pkBorder = 'border-success';
@@ -463,7 +489,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                             $raporNo = trim((string)($pk->rapor_no ?? ''));
                             $raporHtml = Html::encode($raporNo);
                             if ($raporNo !== '') {
-                                if (preg_match('/(\d{6}\.\d{4}\.\d{1,2})/', $raporNo, $m)) {
+                                if (preg_match('/(\d{6}\.\d{4}\.\d+)/', $raporNo, $m)) {
                                     $base = $m[1];
                                 } else {
                                     $base = $raporNo;
@@ -1117,6 +1143,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                         'ELEKTRİK PROJESİ' => 'Elektrik Projesi',
                                         'KULLANMA KLAVUZU' => 'Kullanma Klavuzu',
                                         'BROŞÜR' => 'Broşür',
+                                        'TEK HAT ŞEMASI' => 'Tek Hat Şeması (SVG)',
                                     ], ['class' => 'form-control form-control-sm', 'prompt' => 'Seçiniz...']) ?>
                                 </div>
                                 <div class="col-md-7">
@@ -1574,16 +1601,38 @@ function initMap() {
                 svg.setAttribute('height', String(Math.round(hNum)));
                 svg.style.display = 'block';
 
+                function openEkipmanLink(code) {
+                    window.open(ekipmanViewBase + '&id=' + encodeURIComponent(code), '_blank');
+                }
+
                 svg.querySelectorAll('text').forEach(function(textEl) {
                     var txt = (textEl.textContent || '').trim();
                     if (ekipmanPattern.test(txt)) {
+                        var touchStartX = 0;
+                        var touchStartY = 0;
                         textEl.style.cursor = 'pointer';
                         textEl.style.fill = '#007bff';
                         textEl.style.textDecoration = 'underline';
                         textEl.setAttribute('title', txt + ' — Ekipman sayfasına git');
                         textEl.addEventListener('click', function(e) {
                             e.stopPropagation();
-                            window.open(ekipmanViewBase + '&id=' + encodeURIComponent(txt), '_blank');
+                            openEkipmanLink(txt);
+                        });
+                        textEl.addEventListener('touchstart', function(e) {
+                            if (e.touches.length !== 1) return;
+                            touchStartX = e.touches[0].clientX;
+                            touchStartY = e.touches[0].clientY;
+                            e.stopPropagation();
+                        }, {passive: true});
+                        textEl.addEventListener('touchend', function(e) {
+                            if (e.changedTouches.length !== 1) return;
+                            var dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+                            var dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+                            e.stopPropagation();
+                            if (dx <= 8 && dy <= 8) {
+                                e.preventDefault();
+                                openEkipmanLink(txt);
+                            }
                         });
                         textEl.addEventListener('mouseenter', function() { this.style.fill = '#ff4444'; });
                         textEl.addEventListener('mouseleave', function() { this.style.fill = '#007bff'; });

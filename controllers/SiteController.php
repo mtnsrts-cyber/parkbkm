@@ -11,12 +11,15 @@ use yii\web\NotFoundHttpException;
 use app\models\Ekipman;
 use yii\data\ArrayDataProvider;
 use yii\data\ActiveDataProvider;
+use yii\web\UploadedFile;
 use app\models\LoginForm;
 use app\models\PlanliBakim;
 use app\models\PeriyodikKontrol;
 use app\models\ArizaTakip;
 use app\models\BakimTakip;
 use app\models\BakimTakipPlanli;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 class SiteController extends Controller
 {
     public function behaviors()
@@ -24,7 +27,7 @@ class SiteController extends Controller
         return [
             'access' => [
                 'class' => AccessControl::class,
-                'only' => ['logout', 'toplu-bakim-isle'],
+                'only' => ['logout', 'toplu-bakim-isle', 'periyodik-kontrol-import', 'periyodik-rapor-upload', 'periyodik-kontrol-update', 'periyodik-kontrol-delete'],
                 'rules' => [
                     [
                         'actions' => ['logout'],
@@ -40,6 +43,15 @@ class SiteController extends Controller
                                 && in_array(Yii::$app->user->identity->role, ['admin', 'editor']);
                         },
                     ],
+                    [
+                        'actions' => ['periyodik-kontrol-import', 'periyodik-rapor-upload', 'periyodik-kontrol-update', 'periyodik-kontrol-delete'],
+                        'allow' => true,
+                        'roles' => ['@'],
+                        'matchCallback' => function () {
+                            return !Yii::$app->user->isGuest
+                                && Yii::$app->user->identity->role === 'admin';
+                        },
+                    ],
                 ],
             ],
             'verbs' => [
@@ -47,6 +59,9 @@ class SiteController extends Controller
                 'actions' => [
                     'logout' => ['post'],
                     'toplu-bakim-isle' => ['post'],
+                    'periyodik-kontrol-import' => ['post'],
+                    'periyodik-rapor-upload' => ['post'],
+                    'periyodik-kontrol-delete' => ['post'],
                 ],
             ],
         ];
@@ -177,6 +192,7 @@ public function actionKpi()
 {
     $today = new \DateTime('today');
     $todayStr = $today->format('Y-m-d');
+    $periyodikGecikmisLimitStr = (clone $today)->modify('-30 days')->format('Y-m-d');
     $plus30 = (clone $today)->modify('+30 days');
     $plus90Str = (clone $today)->modify('+90 days')->format('Y-m-d');
     $hurdaSet = $this->getHurdaEkipmanSet();
@@ -268,7 +284,7 @@ public function actionKpi()
         ->all();
 
     $periyodikGecikmisAdet = (int)PeriyodikKontrol::find()
-        ->where(['<', 'gelecek_kontrol_tarihi', $todayStr])
+        ->where(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
         ->count();
 
     $periyodikYaklasan90Adet = (int)PeriyodikKontrol::find()
@@ -304,13 +320,14 @@ public function actionPeriyodikKontroller()
     $searchTerm = trim((string)Yii::$app->request->get('q', ''));
     $quickFilter = trim((string)Yii::$app->request->get('quick', ''));
     $todayStr = date('Y-m-d');
+    $periyodikGecikmisLimitStr = date('Y-m-d', strtotime('-30 days'));
     $plus30Str = date('Y-m-d', strtotime('+30 days'));
     $plus90Str = date('Y-m-d', strtotime('+90 days'));
 
     if ($quickFilter === 'gecikmis') {
-        $query->andWhere(['<', 'gelecek_kontrol_tarihi', $todayStr]);
+        $query->andWhere(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr]);
     } elseif ($quickFilter === 'yaklasan-30') {
-        $query->andWhere(['between', 'gelecek_kontrol_tarihi', $todayStr, $plus30Str]);
+        $query->andWhere(['between', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str]);
     } elseif ($quickFilter === 'yaklasan-90') {
         $query->andWhere(['between', 'gelecek_kontrol_tarihi', $todayStr, $plus90Str]);
     }
@@ -344,7 +361,7 @@ public function actionPeriyodikKontroller()
 public function actionRapor($file)
 {
     // Sadece beklenen formatta dosya adlarına izin ver (güvenlik için)
-    if (!preg_match('/^\d{6}\.\d{4}\.\d{1,2}\.pdf$/', $file)) {
+    if (!preg_match('/^\d{6}\.\d{4}\.\d+\.pdf$/', $file)) {
         throw new NotFoundHttpException('Geçersiz dosya adı.');
     }
 
@@ -354,6 +371,213 @@ public function actionRapor($file)
     }
 
     return Yii::$app->response->sendFile($path, $file, ['inline' => true]);
+}
+
+public function actionPeriyodikKontrolImport()
+{
+    $file = UploadedFile::getInstanceByName('periyodik_excel');
+    if ($file === null) {
+        Yii::$app->session->setFlash('error', 'Lütfen Excel veya CSV dosyası seçiniz.');
+        return $this->redirect(['periyodik-kontroller']);
+    }
+
+    $extension = strtolower((string)$file->extension);
+    if (!in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
+        Yii::$app->session->setFlash('error', 'Sadece .xlsx, .xls veya .csv dosyası yüklenebilir.');
+        return $this->redirect(['periyodik-kontroller']);
+    }
+
+    $transaction = Yii::$app->db->beginTransaction();
+    try {
+        if ($extension === 'csv') {
+            $reader = IOFactory::createReader('Csv');
+            $reader->setDelimiter($this->detectCsvDelimiter($file->tempName));
+            $reader->setInputEncoding('UTF-8');
+            $spreadsheet = $reader->load($file->tempName);
+        } else {
+            $spreadsheet = IOFactory::load($file->tempName);
+        }
+        $sheet = $spreadsheet->getActiveSheet();
+        $highestRow = $sheet->getHighestDataRow();
+        $highestColumn = $sheet->getHighestDataColumn();
+        $rows = $sheet->rangeToArray('A1:' . $highestColumn . $highestRow, null, true, true, true);
+
+        if (count($rows) < 2) {
+            throw new \RuntimeException('Dosyada başlık ve veri satırı bulunamadı.');
+        }
+
+        $headerRowNumber = $this->findPeriyodikHeaderRow($rows);
+        if ($headerRowNumber === null) {
+            throw new \RuntimeException('Başlık satırı bulunamadı. En az Ekipman Kodu/Kodu ve Cihaz Adı başlıkları olmalı.');
+        }
+
+        $columnMap = $this->buildPeriyodikColumnMap($rows[$headerRowNumber]);
+        if (empty($columnMap['ekipman_id']) || empty($columnMap['cihaz_adi'])) {
+            throw new \RuntimeException('Zorunlu başlıklar eksik: Ekipman Kodu/Kodu ve Cihaz Adı.');
+        }
+
+        $created = 0;
+        $updated = 0;
+        $skipped = 0;
+        $errors = [];
+
+        for ($rowNumber = $headerRowNumber + 1; $rowNumber <= $highestRow; $rowNumber++) {
+            $row = $rows[$rowNumber] ?? [];
+            if ($this->isSpreadsheetRowEmpty($row)) {
+                continue;
+            }
+
+            $data = [];
+            foreach ($columnMap as $attribute => $column) {
+                $data[$attribute] = trim((string)($row[$column] ?? ''));
+            }
+
+            if (($data['ekipman_id'] ?? '') === '' || ($data['cihaz_adi'] ?? '') === '') {
+                $skipped++;
+                $errors[] = $rowNumber . '. satır atlandı: Ekipman kodu veya cihaz adı boş.';
+                continue;
+            }
+
+            $data['son_kontrol_tarihi'] = $this->normalizePeriyodikImportDate($this->getSpreadsheetCellValue($row, $columnMap, 'son_kontrol_tarihi'));
+            $data['gelecek_kontrol_tarihi'] = $this->normalizePeriyodikImportDate($this->getSpreadsheetCellValue($row, $columnMap, 'gelecek_kontrol_tarihi'));
+            $data['adet'] = isset($data['adet']) && $data['adet'] !== '' ? (int)$data['adet'] : null;
+
+            foreach (['periyodik_kontrol_gerektirir', 'periyodik_kontrol_gerektirmez'] as $booleanAttribute) {
+                if (array_key_exists($booleanAttribute, $data)) {
+                    $data[$booleanAttribute] = $this->parsePeriyodikImportBoolean($data[$booleanAttribute]);
+                }
+            }
+
+            $model = $this->findExistingPeriyodikKontrol($data) ?: new PeriyodikKontrol();
+            $isNew = $model->isNewRecord;
+            foreach ($data as $attribute => $value) {
+                if ($model->hasAttribute($attribute)) {
+                    $model->$attribute = $value === '' ? null : $value;
+                }
+            }
+
+            if (!$model->save()) {
+                $skipped++;
+                $message = implode(' | ', array_map(static function ($items) {
+                    return implode(', ', $items);
+                }, $model->getErrors()));
+                $errors[] = $rowNumber . '. satır kaydedilemedi: ' . $message;
+                continue;
+            }
+
+            if ($isNew) {
+                $created++;
+            } else {
+                $updated++;
+            }
+        }
+
+        $transaction->commit();
+        $message = "Periyodik kontrol import tamamlandı. Yeni: {$created}, güncellenen: {$updated}, atlanan: {$skipped}.";
+        if (!empty($errors)) {
+            $message .= ' İlk uyarılar: ' . implode(' ', array_slice($errors, 0, 5));
+        }
+        Yii::$app->session->setFlash($skipped > 0 ? 'warning' : 'success', $message);
+    } catch (\Throwable $e) {
+        $transaction->rollBack();
+        Yii::$app->session->setFlash('error', 'Import sırasında hata oluştu: ' . $e->getMessage());
+    }
+
+    return $this->redirect(['periyodik-kontroller']);
+}
+
+public function actionPeriyodikRaporUpload()
+{
+    $files = UploadedFile::getInstancesByName('periyodik_raporlar');
+    if (empty($files)) {
+        Yii::$app->session->setFlash('error', 'Lütfen en az bir PDF dosyası seçiniz.');
+        return $this->redirect(['periyodik-kontroller']);
+    }
+
+    $targetDir = Yii::getAlias('@webroot/uploads/periyodik-raporlar');
+    if (!is_dir($targetDir) && !mkdir($targetDir, 0775, true) && !is_dir($targetDir)) {
+        Yii::$app->session->setFlash('error', 'Rapor klasörü oluşturulamadı.');
+        return $this->redirect(['periyodik-kontroller']);
+    }
+
+    $uploaded = 0;
+    $overwritten = 0;
+    $skipped = 0;
+    $errors = [];
+
+    foreach ($files as $file) {
+        $originalName = (string)$file->name;
+        $extension = strtolower((string)$file->extension);
+        if ($extension !== 'pdf') {
+            $skipped++;
+            $errors[] = $originalName . ': PDF değil.';
+            continue;
+        }
+
+        $baseName = pathinfo($originalName, PATHINFO_FILENAME);
+        if (!preg_match('/^(\d{6}\.\d{4}\.\d+)$/', $baseName, $m)) {
+            $skipped++;
+            $errors[] = $originalName . ': Dosya adı rapor no formatında değil.';
+            continue;
+        }
+
+        $targetPath = $targetDir . DIRECTORY_SEPARATOR . $m[1] . '.pdf';
+        $exists = is_file($targetPath);
+        if (!$file->saveAs($targetPath)) {
+            $skipped++;
+            $errors[] = $originalName . ': Kaydedilemedi.';
+            continue;
+        }
+
+        if ($exists) {
+            $overwritten++;
+        } else {
+            $uploaded++;
+        }
+    }
+
+    $message = "Periyodik rapor yükleme tamamlandı. Yeni: {$uploaded}, değiştirilen: {$overwritten}, atlanan: {$skipped}.";
+    if (!empty($errors)) {
+        $message .= ' İlk uyarılar: ' . implode(' ', array_slice($errors, 0, 5));
+    }
+    Yii::$app->session->setFlash($skipped > 0 ? 'warning' : 'success', $message);
+
+    return $this->redirect(['periyodik-kontroller']);
+}
+
+public function actionPeriyodikKontrolUpdate($id, $return = null)
+{
+    $model = $this->findPeriyodikKontrolModel((int)$id);
+
+    if ($model->load(Yii::$app->request->post())) {
+        foreach (['son_kontrol_tarihi', 'gelecek_kontrol_tarihi'] as $dateAttribute) {
+            if ($model->$dateAttribute === '') {
+                $model->$dateAttribute = null;
+            }
+        }
+        if ($model->adet === '') {
+            $model->adet = null;
+        }
+
+        if ($model->save()) {
+            Yii::$app->session->setFlash('success', 'Periyodik kontrol kaydı güncellendi.');
+            return $this->redirect($this->normalizeLocalReturnUrl($return) ?: ['periyodik-kontroller']);
+        }
+    }
+
+    return $this->render('periyodik-kontrol-form', [
+        'model' => $model,
+        'return' => $this->normalizeLocalReturnUrl($return),
+    ]);
+}
+
+public function actionPeriyodikKontrolDelete($id, $return = null)
+{
+    $model = $this->findPeriyodikKontrolModel((int)$id);
+    $model->delete();
+
+    Yii::$app->session->setFlash('success', 'Periyodik kontrol kaydı silindi.');
+    return $this->redirect($this->normalizeLocalReturnUrl($return) ?: ['periyodik-kontroller']);
 }
 
 public function actionTopluBakimIsle()
@@ -530,6 +754,184 @@ public function actionTopluBakimIsle()
     return $this->redirect(['index']);
 }
 
+private function findPeriyodikHeaderRow(array $rows): ?int
+{
+    foreach ($rows as $rowNumber => $row) {
+        $map = $this->buildPeriyodikColumnMap($row);
+        if (!empty($map['ekipman_id']) && !empty($map['cihaz_adi'])) {
+            return (int)$rowNumber;
+        }
+    }
+
+    return null;
+}
+
+private function findPeriyodikKontrolModel(int $id): PeriyodikKontrol
+{
+    $model = PeriyodikKontrol::findOne($id);
+    if ($model === null) {
+        throw new NotFoundHttpException('Periyodik kontrol kaydı bulunamadı.');
+    }
+
+    return $model;
+}
+
+private function normalizeLocalReturnUrl(?string $return): ?string
+{
+    if ($return === null || $return === '' || preg_match('/^https?:\/\//i', $return)) {
+        return null;
+    }
+
+    return $return;
+}
+
+private function buildPeriyodikColumnMap(array $headerRow): array
+{
+    $aliases = [
+        'ekipman_id' => ['ekipman kodu', 'ekipman id', 'kodu', 'kod'],
+        'cihaz_adi' => ['cihaz adi', 'cihaz adı', 'device name', 'malzemenin tanimi', 'malzemenin tanımı'],
+        'simkal_kodu' => ['simkal kodu', 'simkal kodu seri no', 'seri no', 'seri numarasi', 'seri numarası'],
+        'rapor_no' => ['rapor no', 'rapor numarasi', 'rapor numarası'],
+        'bulundugu_yer' => ['bulundugu yer', 'bulunduğu yer', 'location', 'yer'],
+        'adet' => ['adet', 'pcs'],
+        'kabul_degerleri' => ['kabul degerleri', 'kabul değerleri'],
+        'olcum_degerleri' => ['olcum degerleri', 'ölçüm değerleri', 'olcum değerleri'],
+        'son_kontrol_tarihi' => ['son kontrol tarihi', 'son kontrol tarih', 'kontrol tarihi', 'kontrol tarih'],
+        'gelecek_kontrol_tarihi' => ['gelecek kontrol tarihi', 'gelecek kontrol tarih', 'sonraki kontrol tarihi', 'sonraki kontrol tarih', 'gelecek tarih'],
+        'periyodik_kontrol_gerektirir' => ['periyodik kontrol gerektirir', 'kontrol gerektirir'],
+        'periyodik_kontrol_gerektirmez' => ['periyodik kontrol gerektirmez', 'kontrol gerektirmez'],
+    ];
+
+    $normalizedAliases = [];
+    foreach ($aliases as $attribute => $labels) {
+        foreach ($labels as $candidate) {
+            $normalizedAliases[] = [
+                'attribute' => $attribute,
+                'label' => $this->normalizePeriyodikImportHeader($candidate),
+            ];
+        }
+    }
+
+    usort($normalizedAliases, static function ($a, $b) {
+        return strlen($b['label']) <=> strlen($a['label']);
+    });
+
+    $map = [];
+    foreach ($headerRow as $column => $label) {
+        $normalizedLabel = $this->normalizePeriyodikImportHeader((string)$label);
+        if ($normalizedLabel === '') {
+            continue;
+        }
+
+        foreach ($normalizedAliases as $candidate) {
+            if ($normalizedLabel === $candidate['label']) {
+                $map[$candidate['attribute']] = $column;
+                continue 2;
+            }
+        }
+
+        foreach ($normalizedAliases as $candidate) {
+            if (strlen($candidate['label']) > 5 && preg_match('/(^| )' . preg_quote($candidate['label'], '/') . '( |$)/', $normalizedLabel)) {
+                $map[$candidate['attribute']] = $column;
+                continue 2;
+            }
+        }
+    }
+
+    return $map;
+}
+
+private function normalizePeriyodikImportHeader(string $value): string
+{
+    $value = strtr($value, [
+        'İ' => 'I', 'I' => 'I', 'Ğ' => 'G', 'Ü' => 'U', 'Ş' => 'S', 'Ö' => 'O', 'Ç' => 'C',
+        'ı' => 'i', 'ğ' => 'g', 'ü' => 'u', 'ş' => 's', 'ö' => 'o', 'ç' => 'c',
+    ]);
+    $value = trim(mb_strtolower($value, 'UTF-8'));
+    $value = preg_replace('/[^a-z0-9]+/u', ' ', $value);
+
+    return trim((string)$value);
+}
+
+private function detectCsvDelimiter(string $filePath): string
+{
+    $line = (string)fgets(fopen($filePath, 'rb'));
+    $delimiters = [',' => substr_count($line, ','), ';' => substr_count($line, ';'), "\t" => substr_count($line, "\t")];
+    arsort($delimiters);
+
+    return (string)array_key_first($delimiters);
+}
+
+private function isSpreadsheetRowEmpty(array $row): bool
+{
+    foreach ($row as $value) {
+        if (trim((string)$value) !== '') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+private function getSpreadsheetCellValue(array $row, array $columnMap, string $attribute)
+{
+    if (empty($columnMap[$attribute])) {
+        return null;
+    }
+
+    return $row[$columnMap[$attribute]] ?? null;
+}
+
+private function normalizePeriyodikImportDate($value): ?string
+{
+    if ($value === null || trim((string)$value) === '') {
+        return null;
+    }
+
+    if (is_numeric($value)) {
+        return ExcelDate::excelToDateTimeObject((float)$value)->format('Y-m-d');
+    }
+
+    $value = trim((string)$value);
+    foreach (['Y-m-d', 'd.m.Y', 'd/m/Y', 'd-m-Y', 'm/d/Y'] as $format) {
+        $date = \DateTime::createFromFormat($format, $value);
+        if ($date && $date->format($format) === $value) {
+            return $date->format('Y-m-d');
+        }
+    }
+
+    $timestamp = strtotime($value);
+    return $timestamp === false ? null : date('Y-m-d', $timestamp);
+}
+
+private function parsePeriyodikImportBoolean(string $value): bool
+{
+    $value = $this->normalizePeriyodikImportHeader($value);
+    return in_array($value, ['1', 'evet', 'e', 'yes', 'true', 'var', 'x'], true);
+}
+
+private function findExistingPeriyodikKontrol(array $data): ?PeriyodikKontrol
+{
+    $ekipmanId = trim((string)($data['ekipman_id'] ?? ''));
+    $raporNo = trim((string)($data['rapor_no'] ?? ''));
+    if ($ekipmanId === '') {
+        return null;
+    }
+
+    if ($raporNo !== '') {
+        return PeriyodikKontrol::findOne(['ekipman_id' => $ekipmanId, 'rapor_no' => $raporNo]);
+    }
+
+    return PeriyodikKontrol::find()
+        ->where([
+            'ekipman_id' => $ekipmanId,
+            'cihaz_adi' => trim((string)($data['cihaz_adi'] ?? '')),
+            'son_kontrol_tarihi' => $data['son_kontrol_tarihi'] ?? null,
+            'gelecek_kontrol_tarihi' => $data['gelecek_kontrol_tarihi'] ?? null,
+        ])
+        ->one();
+}
+
 private function normalizePlanliPeriyotForBakim(?string $periyot): string
 {
     $value = trim((string)$periyot);
@@ -592,6 +994,7 @@ private function getHurdaEkipmanSet(): array
 private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterface $today): array
 {
     $todayStr = $today->format('Y-m-d');
+    $periyodikGecikmisLimitStr = (new \DateTime($todayStr))->modify('-30 days')->format('Y-m-d');
     $plus30Str = (new \DateTime($todayStr))->modify('+30 days')->format('Y-m-d');
     $monthStart = (new \DateTime('first day of this month'))->format('Y-m-d');
     $monthEnd = (new \DateTime('last day of this month'))->format('Y-m-d');
@@ -631,10 +1034,10 @@ private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterfac
 
     $toplamPeriyodik = (int)PeriyodikKontrol::find()->count();
     $periyodikGecikmis = (int)PeriyodikKontrol::find()
-        ->where(['<', 'gelecek_kontrol_tarihi', $todayStr])
+        ->where(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
         ->count();
     $periyodikYaklasan = (int)PeriyodikKontrol::find()
-        ->where(['between', 'gelecek_kontrol_tarihi', $todayStr, $plus30Str])
+        ->where(['between', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str])
         ->count();
 
     return [
