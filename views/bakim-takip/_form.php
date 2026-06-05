@@ -56,14 +56,8 @@ $this->registerCss('
 
     <?= $form->errorSummary($model, ['class' => 'alert alert-danger']) ?>
 
-    <div class="row">
-        <div class="col-md-6">
-            <?= $form->field($model, 'BAKIM_GENEL')->dropDownList([ 'BAKIM' => 'BAKIM', 'GENEL' => 'GENEL', ], ['prompt' => 'Seçiniz...']) ?>
-        </div>
-        <div class="col-md-6">
-            <?= $form->field($model, 'PERIYODIK_PLANLI')->dropDownList([ 'GENEL' => 'GENEL','PERİYODİK' => 'PERİYODİK', 'PLANLI: 2 Yıl' => 'PLANLI: 2 Yıl','PLANLI: 1 Yıl' => 'PLANLI: 1 Yıl','PLANLI: 6 Ay' => 'PLANLI: 6 Ay','PLANLI: 3 Ay' => 'PLANLI: 3 Ay' ,'PLANLI: 1 Ay' => 'PLANLI: 1 Ay'], ['prompt' => 'Önceki BAKIM Seçili ise periyodik yada planlı Seçiniz...']) ?>
-        </div>
-    </div>
+    <?= Html::activeHiddenInput($model, 'BAKIM_GENEL', ['value' => 'GENEL']) ?>
+    <?= Html::activeHiddenInput($model, 'PERIYODIK_PLANLI', ['value' => 'GENEL']) ?>
 
     <div class="row">
         <div class="col-md-6">

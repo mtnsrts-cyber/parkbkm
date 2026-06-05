@@ -7,6 +7,8 @@ use yii\db\ActiveRecord;
 
 class PeriyodikKontrol extends ActiveRecord
 {
+    public $is_eski = 0;
+
     public static function tableName()
     {
         return 'periyodik_kontrol';
@@ -20,7 +22,7 @@ class PeriyodikKontrol extends ActiveRecord
             [['son_kontrol_tarihi', 'gelecek_kontrol_tarihi'], 'safe'],
             [['ekipman_id'], 'string', 'max' => 50],
             [['cihaz_adi', 'bulundugu_yer', 'kabul_degerleri', 'olcum_degerleri'], 'string', 'max' => 255],
-            [['simkal_kodu', 'rapor_no'], 'string', 'max' => 100],
+            [['rapor_no'], 'string', 'max' => 100],
         ];
     }
 
@@ -30,7 +32,6 @@ class PeriyodikKontrol extends ActiveRecord
             'id' => 'ID',
             'ekipman_id' => 'Ekipman Kodu',
             'cihaz_adi' => 'Cihaz Adı',
-            'simkal_kodu' => 'Simkal Kodu / Seri No',
             'rapor_no' => 'Rapor No',
             'bulundugu_yer' => 'Bulunduğu Yer',
             'adet' => 'Adet',

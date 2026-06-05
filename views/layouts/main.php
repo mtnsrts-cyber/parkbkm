@@ -97,7 +97,7 @@ if (!Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['adm
 
 // Add auth menu
 if (Yii::$app->user->isGuest) {
-    $navItems[] = ['label' => 'Login', 'url' => ['/site/login']];
+    $navItems[] = ['label' => 'Giriş', 'url' => ['/site/login']];
 } else {
     $navItems[] = [
         'label' => 'Çıkış (' . Yii::$app->user->identity->username . ')',

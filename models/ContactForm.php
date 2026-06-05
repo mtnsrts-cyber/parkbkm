@@ -24,9 +24,9 @@ class ContactForm extends Model
     {
         return [
             // name, email, subject and body are required
-            [['name', 'email', 'subject', 'body'], 'required'],
+            [['name', 'email', 'subject', 'body'], 'required', 'message' => '{attribute} boş olamaz.'],
             // email has to be a valid email address
-            ['email', 'email'],
+            ['email', 'email', 'message' => 'Geçerli bir e-posta adresi giriniz.'],
             // verifyCode needs to be entered correctly
             ['verifyCode', 'captcha'],
         ];
@@ -38,7 +38,11 @@ class ContactForm extends Model
     public function attributeLabels()
     {
         return [
-            'verifyCode' => 'Verification Code',
+            'name' => 'Ad Soyad',
+            'email' => 'E-posta',
+            'subject' => 'Konu',
+            'body' => 'Mesaj',
+            'verifyCode' => 'Doğrulama Kodu',
         ];
     }
 

@@ -25,6 +25,8 @@ $config = [
         'request' => [
             // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
             'cookieValidationKey' => 'Mtqo-CYW8U2mJrpZztGCPFK3CQkFHoax',
+            'baseUrl' => '',
+            'scriptUrl' => '/index.php',
         ],
         'cache' => [
             'class' => 'yii\caching\FileCache',
@@ -52,14 +54,25 @@ $config = [
             ],
         ],
         'db' => $db,
-        /*
         'urlManager' => [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
             'rules' => [
+                '' => 'site/index',
+                'anasayfa' => 'site/index',
+                'kpi' => 'site/kpi',
+                'periyodik-kontroller' => 'site/periyodik-kontroller',
+                'enerji' => 'site/energy',
+                'harita' => 'site/map',
+                'ekipmanlar' => 'ekipman/index',
+                'ekipman/yeni' => 'ekipman/create',
+                'ekipman/<action:(dokuman-ac|dokuman-ekle|dokuman-sil|update|delete|hurdaya-ayir|kullanim-disi|aktife-al|tanitim-foto-yukle|tanitim-foto-sil|etiket-foto-yukle|etiket-foto-sil|enerji-kaynagi-aktar|toplu-aktar|analizor-index|analizor-create|analizor-update|analizor-delete|analizor-veri|analizor-gecmis|sog5-veri|sog5-tuketim|sog5-grafik|export-excel|export-pdf)>' => 'ekipman/<action>',
+                'ekipman/<id:[^/]+>' => 'ekipman/view',
+                '<controller:[\w-]+>/<action:[\w-]+>/<id:[^/]+>' => '<controller>/<action>',
+                '<controller:[\w-]+>/<action:[\w-]+>' => '<controller>/<action>',
+                '<controller:[\w-]+>' => '<controller>/index',
             ],
         ],
-        */
     ],
     'params' => $params,
 ];

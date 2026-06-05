@@ -10,6 +10,76 @@ $this->title = 'Tersane Kroki';
 <?php
 $this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
 $this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['position' => \yii\web\View::POS_HEAD]);
+$this->registerCss(<<<CSS
+.leaflet-control-layers {
+    background: #fff;
+    color: #222;
+    border: 2px solid rgba(0,0,0,.2);
+    border-radius: 4px;
+}
+.leaflet-control-layers-expanded {
+    padding: 6px 10px 6px 6px;
+}
+.leaflet-control-layers label {
+    margin: 0 0 4px;
+    color: #222;
+    font-size: 13px;
+}
+.leaflet-popup-content-wrapper {
+    background: #111827;
+    color: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, .45);
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(0,0,0,.35);
+}
+.leaflet-popup-tip {
+    background: #111827;
+    border: 1px solid rgba(148, 163, 184, .35);
+}
+.leaflet-popup-content {
+    margin: 12px 14px;
+    min-width: 220px;
+}
+.map-popup-card {
+    display: grid;
+    gap: 6px;
+}
+.map-popup-code {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, .18);
+    color: #93c5fd;
+    font-weight: 700;
+    text-decoration: none;
+    letter-spacing: .02em;
+}
+.map-popup-code:hover {
+    color: #bfdbfe;
+    text-decoration: none;
+}
+.map-popup-title {
+    color: #fff;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.map-popup-location {
+    color: #cbd5e1;
+    font-size: 12px;
+}
+.map-popup-location span {
+    color: #94a3b8;
+}
+.leaflet-container a.leaflet-popup-close-button {
+    color: #cbd5e1;
+    padding: 8px 8px 0 0;
+}
+.leaflet-container a.leaflet-popup-close-button:hover {
+    color: #fff;
+}
+CSS);
 
 $mapImage = Yii::getAlias('@web/images/SahaPano.png');
 $parkYuzerImage = Yii::getAlias('@web/images/ParkYuzerHavuz.png');
@@ -87,7 +157,11 @@ foreach ($items as $item) {
     }
 
     $viewUrl = \yii\helpers\Url::to(['ekipman/view', 'id' => $id]);
-    $popupHtml = "<b><a href=\"{$viewUrl}\" target=\"_blank\">#{$id}</a></b><br>{$tanim}<br><i>{$ekipmanYeri}</i>";
+    $popupHtml = '<div class="map-popup-card">'
+        . '<a class="map-popup-code" href="' . htmlspecialchars($viewUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank">#' . htmlspecialchars((string)$id, ENT_QUOTES, 'UTF-8') . '</a>'
+        . '<div class="map-popup-title">' . htmlspecialchars((string)$tanim, ENT_QUOTES, 'UTF-8') . '</div>'
+        . '<div class="map-popup-location"><span>Yer:</span> ' . htmlspecialchars((string)$ekipmanYeri, ENT_QUOTES, 'UTF-8') . '</div>'
+        . '</div>';
 
     $markerData = [
         'id' => $id,
@@ -154,7 +228,7 @@ if (yuzerHavuzLayer) {
     baseLayers['Yüzer Havuz-3'] = yuzerHavuzLayer;
 }
 
-L.control.layers(baseLayers).addTo(map);
+L.control.layers(baseLayers, null, {collapsed: false}).addTo(map);
 // fit to saha by default
 map.fitBounds(sahaBounds);
 

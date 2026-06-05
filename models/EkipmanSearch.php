@@ -4,6 +4,7 @@ namespace app\models;
 
 use yii\base\Model;
 use yii\data\ActiveDataProvider;
+use yii\db\Expression;
 
 class EkipmanSearch extends Ekipman
 {
@@ -13,7 +14,7 @@ class EkipmanSearch extends Ekipman
     public function rules()
     {
         return [
-            [['id', 'MALZEMENIN_TANIMI', 'EKIPMAN_YERI', 'MARKA', 'SERI_NO', 'DURUM', 'globalSearch', 'idList'], 'safe'],
+            [['id', 'MALZEMENIN_TANIMI', 'EKIPMAN_YERI', 'EKIPMAN_CINSI', 'EKIPMAN_TURU', 'MARKA', 'SERI_NO', 'DURUM', 'globalSearch', 'idList'], 'safe'],
         ];
     }
 
@@ -49,14 +50,19 @@ class EkipmanSearch extends Ekipman
             }
         }
 
+        $query->andFilterWhere(['e.EKIPMAN_CINSI' => $this->EKIPMAN_CINSI])
+              ->andFilterWhere(['e.EKIPMAN_TURU' => $this->EKIPMAN_TURU]);
+
         // Genel arama varsa (canlı arama için)
         if (!empty($this->globalSearch)) {
-            $query->orFilterWhere(['like', 'e.MALZEMENIN_TANIMI', $this->globalSearch])
-                  ->orFilterWhere(['like', 'e.EKIPMAN_YERI', $this->globalSearch])
-                  ->orFilterWhere(['like', 'e.MARKA', $this->globalSearch])
-                  ->orFilterWhere(['like', 'e.SERI_NO', $this->globalSearch])
-                  ->orFilterWhere(['like', 'e.id', $this->globalSearch])
-                  ->orWhere(['like', "COALESCE(NULLIF(em.DURUM, ''), 'AKTIF')", strtoupper((string)$this->globalSearch), false]);
+            $query->andWhere(['or',
+                ['like', 'e.MALZEMENIN_TANIMI', $this->globalSearch],
+                ['like', 'e.EKIPMAN_YERI', $this->globalSearch],
+                ['like', 'e.MARKA', $this->globalSearch],
+                ['like', 'e.SERI_NO', $this->globalSearch],
+                ['like', 'e.id', $this->globalSearch],
+                ['like', new Expression("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF')"), strtoupper((string)$this->globalSearch), false],
+            ]);
 
             $this->applyDurumFilter($query);
         } else {
@@ -80,10 +86,12 @@ class EkipmanSearch extends Ekipman
         }
 
         $durum = strtoupper((string)$this->DURUM);
-        if ($durum === 'AKTIF') {
+        if ($durum === Ekipman::DURUM_AKTIF) {
             $query->andWhere("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF') = 'AKTIF'");
-        } elseif ($durum === 'HURDA') {
+        } elseif ($durum === Ekipman::DURUM_HURDA) {
             $query->andWhere("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF') = 'HURDA'");
+        } elseif ($durum === Ekipman::DURUM_KULLANIM_DISI) {
+            $query->andWhere("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF') = 'KULLANIM_DISI'");
         }
     }
 }

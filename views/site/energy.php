@@ -184,7 +184,7 @@ $aktifConfig = $analizorler[$aktifId] ?? null;
             <div style="background:#12111a; border:1px solid #2d1f4a; border-top:3px solid #e94560; border-radius:8px; padding:12px;">
             <!-- Analizör Seçici -->
             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
-                <select class="form-select form-select-sm w-auto" onchange="window.location.href='<?= Url::to(['site/energy']) ?>&id='+this.value">
+                <select class="form-select form-select-sm w-auto" id="analizorSelect">
                     <option value="">-- Analizör Seç --</option>
                     <?php foreach ($analizorler as $id => $cfg): ?>
                         <option value="<?= Html::encode($id) ?>" <?= $id === $aktifId ? 'selected' : '' ?>><?= Html::encode($id) ?> - <?= Html::encode($cfg['model'] ?? '-') ?></option>
@@ -375,7 +375,10 @@ var analizorPolling = false;
 var analizorTimer = null;
 var pollInterval = 30000;
 var currentId = <?= json_encode($aktifId) ?>;
-var analizorApiUrl = <?= json_encode(Url::to(['/ekipman/analizor-veri'])) ?> + '&id=' + encodeURIComponent(currentId);
+var analizorPageUrlTemplate = <?= json_encode(Url::to(['site/energy', 'id' => '__ID__'])) ?>;
+var analizorApiUrlTemplate = <?= json_encode(Url::to(['/ekipman/analizor-veri', 'id' => '__ID__'])) ?>;
+var analizorApiUrl = currentId ? analizorApiUrlTemplate.replace('__ID__', encodeURIComponent(currentId)) : null;
+var sog5GrafikUrlTemplate = <?= json_encode(Url::to(['/ekipman/sog5-grafik', 'type' => '__TYPE__'])) ?>;
 
 var tuketimPolling = false;
 var tuketimTimer = null;
@@ -447,7 +450,7 @@ window.sog5Poll = function() {
 }
 
 window.analizorPoll = function() {
-    if (!analizorPolling) return;
+    if (!analizorPolling || !analizorApiUrl) return;
     document.getElementById('analizorStatus').style.background = '#ffc107';
     document.getElementById('analizorStatus').textContent = 'Okunuyor...';
 
@@ -557,7 +560,7 @@ function sog5TuketimPoll() {
 function loadGrafik(type) {
     var containerId = type === 'hourly' ? 'chart-hourly-container' : (type === 'daily' ? 'chart-daily-container' : 'chart-monthly-container');
     
-    fetch(<?= json_encode(Url::to(['/ekipman/sog5-grafik'])) ?> + '&type=' + type)
+    fetch(sog5GrafikUrlTemplate.replace('__TYPE__', encodeURIComponent(type)))
         .then(function(r) { return r.json(); })
         .then(function(json) {
             if (json.success && json.data) {
@@ -628,6 +631,15 @@ document.querySelectorAll('#chartTab button').forEach(function(btn) {
         loadGrafik(type);
     });
 });
+
+var analizorSelect = document.getElementById('analizorSelect');
+if (analizorSelect) {
+    analizorSelect.addEventListener('change', function() {
+        if (this.value) {
+            window.location.href = analizorPageUrlTemplate.replace('__ID__', encodeURIComponent(this.value));
+        }
+    });
+}
 
 window.onload = function() {
     sog5Polling = true;

@@ -14,6 +14,54 @@ use yii\widgets\Pjax;
 $this->title = 'Arıza Takip Listesi';
 $this->params['breadcrumbs'][] = $this->title;
 ?>
+<style>
+.ariza-desktop-grid {}
+.ariza-mobile-list { display: none; }
+.ariza-mobile-card {
+    display: block;
+    color: #fff;
+    text-decoration: none;
+    border: 1px solid #495057;
+    border-radius: 10px;
+    background: #1f2428;
+}
+.ariza-mobile-card:hover {
+    color: #fff;
+    border-color: #ffc107;
+    text-decoration: none;
+}
+.ariza-mobile-date {
+    color: #ffc107;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.ariza-mobile-status {
+    font-weight: 800;
+    font-size: .82rem;
+}
+.ariza-mobile-status-faal { color: #22c55e; }
+.ariza-mobile-status-arizali-faal { color: #ffc107; }
+.ariza-mobile-status-gayri-faal { color: #ef4444; }
+.ariza-mobile-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.ariza-mobile-meta {
+    color: #cbd5e1;
+    font-size: .86rem;
+}
+@media (max-width: 767.98px) {
+    .ariza-desktop-grid { display: none; }
+    .ariza-mobile-list {
+        display: grid;
+        gap: .55rem;
+    }
+}
+</style>
 <div class="ariza-takip-index">
 
     <h1><?= Html::encode($this->title) ?></h1>
@@ -25,7 +73,7 @@ $this->params['breadcrumbs'][] = $this->title;
     <?php endif; ?>
 
     <p>
-        <?php if (!Yii::$app->user->isGuest): ?>
+        <?php if (!Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true)): ?>
             <?= Html::a('Yeni Arıza Kaydı', ['create'], ['class' => 'btn btn-success']) ?>
         <?php endif; ?>
 
@@ -40,6 +88,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
     <?php Pjax::begin(['id' => 'ariza-pjax', 'enablePushState' => false]); ?>
 
+    <div class="ariza-desktop-grid">
     <?= GridView::widget([
         'dataProvider' => $dataProvider,
         'filterModel' => $searchModel,
@@ -98,6 +147,31 @@ $this->params['breadcrumbs'][] = $this->title;
             ],
         ],
     ]); ?>
+    </div>
+
+    <div class="ariza-mobile-list">
+        <?php foreach ($dataProvider->getModels() as $model): ?>
+            <?php
+            $durum = strtoupper((string)$model->ARIZANIN_SON_DURUMU);
+            $durumClass = $durum === 'FAAL'
+                ? 'ariza-mobile-status-faal'
+                : ($durum === 'ARIZALI_FAAL' ? 'ariza-mobile-status-arizali-faal' : 'ariza-mobile-status-gayri-faal');
+            ?>
+            <?= Html::a(
+                '<div class="d-flex justify-content-between align-items-start gap-2 mb-1">'
+                    . '<div class="ariza-mobile-date">' . Html::encode(Yii::$app->formatter->asDate($model->ARIZA_BILDIRIM_TARIHI, 'php:d.m.Y')) . '</div>'
+                    . '<div class="ariza-mobile-status ' . $durumClass . '">' . Html::encode((string)$model->ARIZANIN_SON_DURUMU) . '</div>'
+                . '</div>'
+                . '<div class="ariza-mobile-title mb-1">' . Html::encode((string)$model->ARIZALANAN_MAKINE_ADI) . '</div>'
+                . '<div class="d-flex justify-content-between align-items-center gap-2">'
+                    . '<div class="ariza-mobile-meta">' . Html::encode((string)$model->ARIZALANAN_MAKINE_KODU) . '</div>'
+                    . '<span class="btn btn-sm btn-outline-warning py-0 px-2">Detay</span>'
+                . '</div>',
+                ['view', 'id' => $model->id],
+                ['class' => 'ariza-mobile-card p-2']
+            ) ?>
+        <?php endforeach; ?>
+    </div>
 
     <?php Pjax::end(); ?>
 

@@ -15,6 +15,8 @@ class BakimTakipSearch extends BakimTakip
     public $TARIH_to;
     public $globalSearch;
     public $quickFilter;
+    public $activityKind;
+    public $planliPeriod;
     /**
      * {@inheritdoc}
      */
@@ -22,7 +24,7 @@ class BakimTakipSearch extends BakimTakip
     {
         return [
             [['id'], 'integer'],
-            [['BAKIM_GENEL', 'PERIYODIK_PLANLI', 'TARIH', 'YERI', 'SISTEM_CIHAZ_OZELLIK', 'YAPILAN_IS', 'ISI_YAPANLAR', 'TARIH_from', 'TARIH_to', 'globalSearch', 'quickFilter'], 'safe'],
+            [['BAKIM_GENEL', 'PERIYODIK_PLANLI', 'TARIH', 'YERI', 'SISTEM_CIHAZ_OZELLIK', 'YAPILAN_IS', 'ISI_YAPANLAR', 'TARIH_from', 'TARIH_to', 'globalSearch', 'quickFilter', 'activityKind', 'planliPeriod'], 'safe'],
             [['BAKIM_SURESI_SAAT'], 'number'],
         ];
     }
@@ -74,6 +76,27 @@ class BakimTakipSearch extends BakimTakip
 
         if ($this->quickFilter === 'this-month') {
             $query->andWhere(['between', 'TARIH', date('Y-m-01'), date('Y-m-t')]);
+        }
+
+        if ($this->activityKind === 'general') {
+            $query->andWhere(['not in', 'id', BakimTakipPlanli::find()->select('bakim_id')])
+                ->andWhere([
+                    'or',
+                    ['PERIYODIK_PLANLI' => null],
+                    ['PERIYODIK_PLANLI' => ''],
+                    ['not like', 'PERIYODIK_PLANLI', 'PLANLI'],
+                ]);
+        } elseif ($this->activityKind === 'planli') {
+            $planliSubQuery = BakimTakipPlanli::find()
+                ->alias('btp')
+                ->select('btp.bakim_id')
+                ->innerJoin(['pb' => PlanliBakim::tableName()], 'pb.id = btp.planli_id');
+
+            if (trim((string)$this->planliPeriod) !== '') {
+                $planliSubQuery->andWhere(['pb.periyodu' => $this->planliPeriod]);
+            }
+
+            $query->andWhere(['in', 'id', $planliSubQuery]);
         }
 
         // grid filtering conditions

@@ -24,9 +24,29 @@ try {
     $qrCode = null;
 }
 
-$tanitimFotoUrl = null;
-if (!empty($model->TANITIM_FOTO)) {
-    $tanitimFotoUrl = Yii::getAlias('@web/uploads/' . str_replace('%2F', '/', implode('/', array_map('rawurlencode', explode('/', ltrim((string)$model->TANITIM_FOTO, '/'))))));
+$buildUploadUrl = static function (?string $relativePath): ?string {
+    $relativePath = trim((string)$relativePath);
+    if ($relativePath === '') {
+        return null;
+    }
+
+    return Yii::getAlias('@web/uploads/' . str_replace('%2F', '/', implode('/', array_map('rawurlencode', explode('/', ltrim($relativePath, '/'))))));
+};
+
+$tanitimFotoUrl = $buildUploadUrl($model->TANITIM_FOTO ?? null);
+$etiketFotograflari = $etiketFotograflari ?? [];
+$etiketFotoItems = [];
+foreach ($etiketFotograflari as $etiketFoto) {
+    $etiketUrl = $buildUploadUrl($etiketFoto->dosya_yolu ?? null);
+    if ($etiketUrl === null) {
+        continue;
+    }
+    $etiketFotoItems[] = [
+        'id' => $etiketFoto->id,
+        'url' => $etiketUrl,
+        'name' => (string)$etiketFoto->dokuman_adi,
+        'updated' => (string)($etiketFoto->updated_at ?? time()),
+    ];
 }
 
 $canManageTanitimFoto = !Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true);
@@ -35,13 +55,51 @@ $periyodikGraceDays = 30;
 
 if ($canManageTanitimFoto) {
     $this->registerJs("(function(){
-        $(document).on('change', '#tanitimFotoFileInput, #tanitimFotoCameraInput', function(){
+        $(document).on('change', '#tanitimFotoFileInput, #tanitimFotoCameraInput, #etiketFotoFileInput, #etiketFotoCameraInput', function(){
             if (this.files && this.files.length > 0) {
                 $(this).closest('form').trigger('submit');
             }
         });
     })();");
 }
+
+$this->registerCss(<<<CSS
+.konum-besleme-panel .konum-chain-node {
+    min-width: 150px;
+    flex: 0 0 auto;
+    text-align: left;
+}
+.konum-besleme-panel .konum-chain-node:not(.active) {
+    opacity: .72;
+}
+.konum-besleme-panel .konum-chain-node.active {
+    box-shadow: 0 0 0 2px rgba(255,255,255,.28), 0 0 18px rgba(59,130,246,.45);
+}
+.chain-map-pin {
+    border: 2px solid rgba(255,255,255,.85);
+    border-radius: 999px;
+    padding: 2px 5px;
+    background: rgba(37,99,235,.78);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 5px 12px rgba(0,0,0,.32);
+    opacity: .48;
+    transform: scale(.58);
+    transition: opacity .15s ease, transform .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.chain-map-pin.is-active {
+    background: #f97316;
+    opacity: 1;
+    transform: scale(1.18);
+    box-shadow: 0 0 0 3px rgba(249,115,22,.25), 0 12px 28px rgba(0,0,0,.45);
+}
+#map {
+    touch-action: none;
+    overscroll-behavior: contain;
+}
+CSS);
 
 // Mobil kart genişletme/daraltma
 $this->registerJs("
@@ -65,7 +123,7 @@ $this->registerCssFile("https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bo
 $this->registerJsFile("https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js");
 
 // Leaflet
-$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['depends' => [\yii\web\JqueryAsset::class]]);
+$this->registerJsFile(Yii::getAlias('@web/vendor/leaflet/leaflet.js'), ['position' => \yii\web\View::POS_HEAD]);
 $this->registerCssFile(Yii::getAlias('@web/vendor/leaflet/leaflet.css'));
 
 // RESİM YOLU KONTROLÜ
@@ -146,6 +204,59 @@ if ($isYuzerHavuzEquipment((string)$model->id, $model->EKIPMAN_YERI)) {
 
 $markerX = !empty($model->BOYLAM) ? $model->BOYLAM : ($displayWidth / 2);
 $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
+
+$beslemeZincirleri = array_slice($model->getBeslemeKaynagiZincirleri(), 0, 3);
+$konumBeslemeZincirleri = array_slice($beslemeZincirleri, 0, 2);
+$hasBesleme = !empty($beslemeZincirleri);
+$hasKonumBesleme = !empty($konumBeslemeZincirleri);
+$konumChainLimit = static function (array $chain) use ($model): array {
+    $currentId = (string)$model->id;
+    $currentIndex = null;
+
+    foreach ($chain as $index => $node) {
+        if ((string)($node['id'] ?? '') === $currentId) {
+            $currentIndex = $index;
+            break;
+        }
+    }
+
+    if ($currentIndex === null) {
+        return array_slice($chain, -3);
+    }
+
+    $start = max(0, $currentIndex - 2);
+    return array_slice($chain, $start, $currentIndex - $start + 1);
+};
+$beslemeKonumIds = [(string)$model->id];
+foreach ($konumBeslemeZincirleri as $zincir) {
+    foreach ($konumChainLimit($zincir['chain'] ?? []) as $node) {
+        $nodeId = trim((string)($node['id'] ?? ''));
+        if ($nodeId !== '') {
+            $beslemeKonumIds[$nodeId] = $nodeId;
+        }
+    }
+}
+$beslemeKonumEkipmanlar = [];
+if (!empty($beslemeKonumIds)) {
+    $beslemeKonumEkipmanlar = \app\models\Ekipman::find()
+        ->where(['id' => array_values($beslemeKonumIds)])
+        ->all();
+}
+$beslemeKonumMarkers = [];
+foreach ($beslemeKonumEkipmanlar as $konumEkipman) {
+    if ($konumEkipman->ENLEM === null || $konumEkipman->ENLEM === '' || $konumEkipman->BOYLAM === null || $konumEkipman->BOYLAM === '') {
+        continue;
+    }
+    $beslemeKonumMarkers[] = [
+        'id' => (string)$konumEkipman->id,
+        'title' => (string)$konumEkipman->MALZEMENIN_TANIMI,
+        'location' => (string)$konumEkipman->EKIPMAN_YERI,
+        'lat' => (float)$konumEkipman->ENLEM,
+        'lng' => (float)$konumEkipman->BOYLAM,
+        'self' => (string)$konumEkipman->id === (string)$model->id,
+    ];
+}
+$beslemeKonumMarkersJson = json_encode($beslemeKonumMarkers, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 ?>
 
 <div class="ekipman-view">
@@ -171,12 +282,19 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 'class' => 'btn btn-danger',
                                 'data' => ['confirm' => 'Silmek istediğinize emin misiniz?', 'method' => 'post'],
                             ]) ?>
-                            <?php if (strtoupper((string)$model->DURUM) === 'HURDA'): ?>
+                            <?php if ($model->DURUM !== \app\models\Ekipman::DURUM_AKTIF): ?>
                                 <?= Html::a('Aktife Al', ['aktife-al', 'id' => $model->id], [
                                     'class' => 'btn btn-success',
                                     'data' => ['confirm' => 'Bu ekipmanı tekrar aktif yapmak istiyor musunuz?', 'method' => 'post'],
                                 ]) ?>
-                            <?php else: ?>
+                            <?php endif; ?>
+                            <?php if ($model->DURUM !== \app\models\Ekipman::DURUM_KULLANIM_DISI): ?>
+                                <?= Html::a('Kullanım Dışı', ['kullanim-disi', 'id' => $model->id], [
+                                    'class' => 'btn btn-outline-warning',
+                                    'data' => ['confirm' => 'Bu ekipmanın planlı bakım ve periyodik kontrol takibini askıya almak istiyor musunuz?', 'method' => 'post'],
+                                ]) ?>
+                            <?php endif; ?>
+                            <?php if ($model->DURUM !== \app\models\Ekipman::DURUM_HURDA): ?>
                                 <?= Html::a('Hurdaya Ayır', ['hurdaya-ayir', 'id' => $model->id], [
                                     'class' => 'btn btn-warning',
                                     'data' => ['confirm' => 'Bu ekipmanı hurdaya ayırmak istiyor musunuz?', 'method' => 'post'],
@@ -185,7 +303,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                         <?php endif; ?>
                     </p>
                 </div>
-                <div class="col-lg-3 col-md-4 text-center">
+                <div class="col-lg-3 col-md-4 text-center" id="tanitim-foto">
                     <div class="border border-secondary rounded p-2 bg-black">
                         <?php if ($tanitimFotoUrl !== null): ?>
                             <a href="#" data-bs-toggle="modal" data-bs-target="#tanitimFotoPreviewModal" class="d-block" title="Büyük önizleme aç">
@@ -194,6 +312,21 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                         <?php else: ?>
                             <div class="d-flex align-items-center justify-content-center text-muted" style="min-height: 220px;">
                                 Tanıtım fotoğrafı yok
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($etiketFotoItems)): ?>
+                            <div class="mt-2 pt-2 border-top border-secondary text-left">
+                                <div class="small text-muted mb-2">Etiketler</div>
+                                <div class="row no-gutters" style="gap:6px;">
+                                    <?php foreach ($etiketFotoItems as $etiketItem): ?>
+                                        <div style="width:72px;" class="position-relative">
+                                            <a href="<?= Html::encode($etiketItem['url'] . '?v=' . urlencode($etiketItem['updated'])) ?>" target="_blank" title="Etiketi büyüt">
+                                                <img src="<?= Html::encode($etiketItem['url'] . '?v=' . urlencode($etiketItem['updated'])) ?>" alt="<?= Html::encode($etiketItem['name']) ?>" class="img-fluid rounded border border-secondary" style="height:54px; width:72px; object-fit:cover;">
+                                            </a>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -236,6 +369,33 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                             <button type="submit" class="btn btn-outline-danger btn-sm btn-block" onclick="return confirm('Tanıtım fotoğrafını kaldırmak istiyor musunuz?');">Fotoğrafı Kaldır</button>
                                         </form>
                                     <?php endif; ?>
+
+                                    <hr class="border-secondary my-3">
+                                    <div class="small text-muted mb-2">Ekipman etiket fotoğrafları</div>
+
+                                    <form action="<?= Url::to(['etiket-foto-yukle', 'id' => $model->id]) ?>" method="post" enctype="multipart/form-data" class="mb-2">
+                                        <input type="hidden" name="_csrf" value="<?= Html::encode(Yii::$app->request->csrfToken) ?>">
+                                        <input type="file" id="etiketFotoFileInput" name="etiket_foto" accept="image/jpeg,image/png,image/webp" class="d-none">
+                                        <label for="etiketFotoFileInput" class="btn btn-outline-primary btn-sm btn-block mb-0">Etiket Dosyası Seç</label>
+                                    </form>
+
+                                    <form action="<?= Url::to(['etiket-foto-yukle', 'id' => $model->id]) ?>" method="post" enctype="multipart/form-data" class="mb-2">
+                                        <input type="hidden" name="_csrf" value="<?= Html::encode(Yii::$app->request->csrfToken) ?>">
+                                        <input type="file" id="etiketFotoCameraInput" name="etiket_foto" accept="image/*" capture="environment" class="d-none">
+                                        <label for="etiketFotoCameraInput" class="btn btn-outline-info btn-sm btn-block mb-0">Etiketi Kamera ile Çek</label>
+                                    </form>
+
+                                    <?php if (!empty($etiketFotoItems)): ?>
+                                        <div class="small text-muted mb-1">Yüklü etiketler</div>
+                                        <?php foreach ($etiketFotoItems as $etiketItem): ?>
+                                            <form action="<?= Url::to(['etiket-foto-sil', 'id' => $model->id, 'dokumanId' => $etiketItem['id']]) ?>" method="post" class="mb-1">
+                                                <input type="hidden" name="_csrf" value="<?= Html::encode(Yii::$app->request->csrfToken) ?>">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm btn-block text-truncate" onclick="return confirm('Bu etiket fotoğrafını kaldırmak istiyor musunuz?');">
+                                                    Kaldır: <?= Html::encode($etiketItem['name']) ?>
+                                                </button>
+                                            </form>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -244,6 +404,16 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
             </div>
         </div>
     </div>
+
+    <?php if ($model->DURUM === \app\models\Ekipman::DURUM_KULLANIM_DISI): ?>
+        <div class="alert alert-warning py-2">
+            Bu ekipman kullanım dışıdır. Planlı bakım ve periyodik kontrol takipleri aktif listelerde askıya alınmıştır.
+        </div>
+    <?php elseif ($model->DURUM === \app\models\Ekipman::DURUM_HURDA): ?>
+        <div class="alert alert-secondary py-2">
+            Bu ekipman hurda statüsündedir. Planlı bakım ve periyodik kontrol takipleri aktif listelerde gösterilmez.
+        </div>
+    <?php endif; ?>
 
     <?php if ($tanitimFotoUrl !== null): ?>
         <div class="modal fade" id="tanitimFotoPreviewModal" tabindex="-1" role="dialog" aria-labelledby="tanitimFotoPreviewLabel" aria-hidden="true">
@@ -289,7 +459,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                     'id',
                     [
                         'attribute' => 'DURUM',
-                        'value' => strtoupper((string)$model->DURUM) === 'HURDA' ? 'HURDA' : 'AKTİF',
+                        'value' => $model->getDurumEtiketi(),
                     ],
                     'MALZEMENIN_TANIMI:ntext',
                     'EKIPMAN_YERI:ntext',
@@ -374,6 +544,10 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                     'formatter' => ['class' => yii\i18n\Formatter::class, 'nullDisplay' => ''],
                     'tableOptions' => ['class' => 'table table-sm table-striped table-bordered d-none d-md-table'],
                     'rowOptions' => function ($model) {
+                        if ((int)($model->is_eski ?? 0) === 1) {
+                            return ['class' => 'table-secondary text-muted'];
+                        }
+
                         if (!empty($model->gelecek_kontrol_tarihi)) {
                             try {
                                 $gelecek = new \DateTime($model->gelecek_kontrol_tarihi);
@@ -397,7 +571,17 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                     },
                     'columns' => array_filter([
                         'cihaz_adi',
-                        'simkal_kodu',
+                        [
+                            'label' => 'Durum',
+                            'format' => 'raw',
+                            'value' => function ($model) {
+                                if ((int)($model->is_eski ?? 0) === 1) {
+                                    return '<span class="badge badge-secondary">Eski rapor</span>';
+                                }
+
+                                return '<span class="badge badge-success">Aktif rapor</span>';
+                            },
+                        ],
                         [
                             'attribute' => 'rapor_no',
                             'format' => 'raw',
@@ -469,22 +653,27 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                     <?php else: ?>
                         <?php foreach ($pkModels as $pk):
                             $pkUid = 'pk_' . $pk->id;
+                            $pkEski = (int)($pk->is_eski ?? 0) === 1;
                             // Renk belirle
                             $pkBorder = 'border-secondary';
-                            try {
-                                if (!empty($pk->gelecek_kontrol_tarihi)) {
-                                    $pkGelecek = new \DateTime($pk->gelecek_kontrol_tarihi);
-                                    $pkToday = new \DateTime('today');
-                                    $pkGraceEnd = (clone $pkGelecek)->modify('+30 days');
-                                    if ($pkToday > $pkGraceEnd) {
-                                        $pkBorder = 'border-danger';
-                                    } elseif ($pkToday > $pkGelecek || $pkToday->diff($pkGelecek)->days <= 30) {
-                                        $pkBorder = 'border-warning';
-                                    } else {
-                                        $pkBorder = 'border-success';
+                            if ($pkEski) {
+                                $pkBorder = 'border-secondary';
+                            } else {
+                                try {
+                                    if (!empty($pk->gelecek_kontrol_tarihi)) {
+                                        $pkGelecek = new \DateTime($pk->gelecek_kontrol_tarihi);
+                                        $pkToday = new \DateTime('today');
+                                        $pkGraceEnd = (clone $pkGelecek)->modify('+30 days');
+                                        if ($pkToday > $pkGraceEnd) {
+                                            $pkBorder = 'border-danger';
+                                        } elseif ($pkToday > $pkGelecek || $pkToday->diff($pkGelecek)->days <= 30) {
+                                            $pkBorder = 'border-warning';
+                                        } else {
+                                            $pkBorder = 'border-success';
+                                        }
                                     }
-                                }
-                            } catch (\Exception $e) {}
+                                } catch (\Exception $e) {}
+                            }
                             // Rapor linki
                             $raporNo = trim((string)($pk->rapor_no ?? ''));
                             $raporHtml = Html::encode($raporNo);
@@ -507,6 +696,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div style="min-width:0;" class="flex-grow-1">
                                         <span class="small font-weight-bold"><?= Html::encode($pk->cihaz_adi) ?></span>
+                                        <span class="badge <?= $pkEski ? 'badge-secondary' : 'badge-success' ?> ml-1" style="font-size:.65rem;"><?= $pkEski ? 'Eski rapor' : 'Aktif rapor' ?></span>
                                         <?php if (!empty($pk->gelecek_kontrol_tarihi)): ?>
                                             <span class="badge <?= $pkBorder === 'border-danger' ? 'badge-danger' : ($pkBorder === 'border-warning' ? 'badge-warning' : 'badge-success') ?> ml-1" style="font-size:.65rem;"><?= Html::encode(Yii::$app->formatter->asDate($pk->gelecek_kontrol_tarihi, 'php:d.m.Y')) ?></span>
                                         <?php endif; ?>
@@ -516,7 +706,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                 <div id="<?= $pkUid ?>" class="card-expand-detail mt-2" style="display:none;">
                                     <table class="table table-sm table-borderless mb-0" style="font-size:.75rem;">
                                         <tr><td class="text-muted py-0" style="width:100px;">Cihaz Adı</td><td class="py-0"><?= Html::encode($pk->cihaz_adi) ?></td></tr>
-                                        <tr><td class="text-muted py-0">Simkal Kodu</td><td class="py-0"><?= Html::encode($pk->simkal_kodu) ?></td></tr>
+                                        <tr><td class="text-muted py-0">Durum</td><td class="py-0"><?= $pkEski ? '<span class="badge badge-secondary">Eski rapor</span>' : '<span class="badge badge-success">Aktif rapor</span>' ?></td></tr>
                                         <tr><td class="text-muted py-0">Rapor No</td><td class="py-0"><?= $raporHtml ?></td></tr>
                                         <tr><td class="text-muted py-0">Yer</td><td class="py-0"><?= Html::encode($pk->bulundugu_yer) ?></td></tr>
                                         <tr><td class="text-muted py-0">Adet</td><td class="py-0"><?= Html::encode($pk->adet) ?></td></tr>
@@ -612,11 +802,18 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                     $totalDays = max(1, $sonTarih->diff($sonrakiTarih)->days);
                                     $today = new \DateTime('today');
 
-                                    if ($sonrakiTarih <= $today) {
+                                    if ($sonrakiTarih < $today) {
                                         $remainingDays = 0;
                                         $percent = 100;
                                         $barClass = 'bg-danger';
+                                        $barStyle = '';
                                         $label = $sonrakiTarih->format('d.m.Y') . ' - GECİKMİŞ';
+                                    } elseif ($sonrakiTarih == $today) {
+                                        $remainingDays = 0;
+                                        $percent = 100;
+                                        $barClass = '';
+                                        $barStyle = 'background-color: #c2410c;';
+                                        $label = $sonrakiTarih->format('d.m.Y') . ' - BUGÜN SON GÜN';
                                     } else {
                                         $remainingDays = $today->diff($sonrakiTarih)->days;
                                         $completedDays = $totalDays - $remainingDays;
@@ -624,18 +821,20 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                         $fractionRemaining = $remainingDays / $totalDays;
 
                                         if ($fractionRemaining <= 0.2) {
-                                            $barClass = 'bg-danger';
-                                        } elseif ($fractionRemaining <= 0.5) {
                                             $barClass = 'bg-warning';
+                                        } elseif ($fractionRemaining <= 0.5) {
+                                            $barClass = 'bg-info';
                                         } else {
                                             $barClass = 'bg-success';
                                         }
+                                        $barStyle = '';
 
                                         $label = $sonrakiTarih->format('d.m.Y') . ' - ' . $remainingDays . ' gün kaldı';
                                     }
                                 } catch (\Exception $e) {
                                     $percent = 0;
                                     $barClass = 'bg-secondary';
+                                    $barStyle = '';
                                     $label = 'Tarih hesaplanamadı';
                                 }
                                 ?>
@@ -644,7 +843,7 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                                     <td class="periyot-col"><?= Html::encode(str_replace('Periyodik: ', '', $nb['periyodu'])) ?></td>
                                     <td>
                                         <div class="progress position-relative" style="height: 22px; margin-bottom: 0;">
-                                            <div class="progress-bar <?= $barClass ?>" role="progressbar" style="width: <?= $percent ?>%; opacity: 0.4;" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100"></div>
+                                            <div class="progress-bar <?= $barClass ?>" role="progressbar" style="width: <?= $percent ?>%; opacity: 0.4; <?= $barStyle ?>" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100"></div>
                                             <span class="position-absolute w-100 text-center small" style="color: #fff; line-height: 22px;">
                                                 <?= Html::encode($label) ?>
                                             </span>
@@ -760,6 +959,9 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                         ],
                         [
                             'attribute' => 'PERIYODIK_PLANLI',
+                            'value' => static function ($row) {
+                                return trim((string)($row->PERIYODIK_PLANLI ?? ''));
+                            },
                             'headerOptions' => ['style' => 'width:180px;', 'class' => 'd-none-mob'],
                             'contentOptions' => ['class' => 'd-none-mob'],
                         ],
@@ -979,61 +1181,349 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
         <div class="tab-pane fade" id="dokumanlar" role="tabpanel">
             <div style="margin-top:20px;">
 
-                <!-- Enerji Kaynağı Zinciri -->
-                <?php
-                $enerjiKaynagiZinciri = $model->getEnerjiKaynagiZinciri();
-                $hasBesleme = count($enerjiKaynagiZinciri) > 1;
-                ?>
+                <!-- Besleme Zincirleri -->
                 <?php if ($hasBesleme): ?>
                     <div class="mb-4">
-                        <h6 class="mb-2">⚡ Enerji Kaynağı</h6>
-                        <div class="d-flex align-items-center flex-nowrap" style="overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px;">
-                            <?php foreach ($enerjiKaynagiZinciri as $i => $node): ?>
-                                <?php
-                                $isSelf = ($node['id'] === $model->id);
-                                $bgClass = $isSelf ? 'bg-danger' : 'bg-dark';
-                                $borderClass = $isSelf ? 'border-danger' : 'border-secondary';
-                                ?>
-                                <div class="text-center px-2 py-1 border <?= $borderClass ?> rounded <?= $bgClass ?>" style="min-width: 0; white-space: nowrap; flex-shrink: 0;">
-                                    <?php if ($isSelf): ?>
-                                        <div class="font-weight-bold text-white small"><?= Html::encode($node['id']) ?></div>
-                                        <div style="font-size:.65rem;" class="text-white-50"><?= Html::encode($node['tanim']) ?></div>
-                                    <?php else: ?>
-                                        <?= Html::a(
-                                            '<div class="font-weight-bold small">' . Html::encode($node['id']) . '</div>'
-                                            . '<div style="font-size:.65rem;" class="text-muted">' . Html::encode($node['tanim']) . '</div>',
-                                            ['ekipman/view', 'id' => $node['id']],
-                                            ['class' => 'text-white text-decoration-none']
-                                        ) ?>
+                        <?php
+                        $gerilimRenkleri = [
+                            'yg' => 'text-danger',
+                            'ag' => 'text-primary',
+                        ];
+                        $isTrafoNode = static function ($node) {
+                            return stripos((string)($node['cinsi'] ?? ''), 'TRAFO') !== false;
+                        };
+                        $getTrafoIndex = static function ($chain) use ($isTrafoNode) {
+                            foreach ($chain as $idx => $node) {
+                                if ($isTrafoNode($node)) {
+                                    return $idx;
+                                }
+                            }
+                            return null;
+                        };
+                        $getSegmentGerilim = static function ($chain, $segmentIndex, $fallbackGerilim) use ($getTrafoIndex) {
+                            $trafoIndex = $getTrafoIndex($chain);
+                            if ($trafoIndex === null) {
+                                return $fallbackGerilim ?: 'ag';
+                            }
+
+                            $trafoYonu = $chain[$trafoIndex]['trafo_donusum_yonu'] ?? 'yg_ag';
+                            if ($trafoYonu === 'yg_yg') {
+                                return 'yg';
+                            }
+                            if ($trafoYonu === 'ag_yg') {
+                                return $segmentIndex < $trafoIndex ? 'ag' : 'yg';
+                            }
+
+                            return $segmentIndex < $trafoIndex ? 'yg' : 'ag';
+                        };
+                        $getNodeGerilim = static function ($chain, $nodeIndex, $fallbackGerilim) use ($getSegmentGerilim) {
+                            if (count($chain) < 2) {
+                                return $fallbackGerilim ?: 'ag';
+                            }
+
+                            if ($nodeIndex <= 0) {
+                                return $getSegmentGerilim($chain, 0, $fallbackGerilim);
+                            }
+
+                            return $getSegmentGerilim($chain, $nodeIndex - 1, $fallbackGerilim);
+                        };
+                        $getTrafoEtiketi = static function ($node) {
+                            if (!empty($node['trafo_gerilim_degeri'])) {
+                                return $node['trafo_gerilim_degeri'];
+                            }
+
+                            $trafoYonu = $node['trafo_donusum_yonu'] ?? 'yg_ag';
+                            if ($trafoYonu === 'ag_yg') {
+                                return 'AG → YG';
+                            }
+                            if ($trafoYonu === 'yg_yg') {
+                                return 'YG → YG';
+                            }
+
+                            return 'YG → AG';
+                        };
+                        $nodeBgClasses = [
+                            'yg' => 'bg-danger text-white',
+                            'ag' => 'bg-primary text-white',
+                        ];
+                        $finalNodeCounts = [];
+                        $finalMaxPredecessorIndex = [];
+                        foreach ($beslemeZincirleri as $zincir) {
+                            $chain = $zincir['chain'] ?? [];
+                            $finalNode = end($chain);
+                            $finalId = (string)($finalNode['id'] ?? '');
+                            if ($finalId !== '') {
+                                $finalNodeCounts[$finalId] = ($finalNodeCounts[$finalId] ?? 0) + 1;
+                                $finalMaxPredecessorIndex[$finalId] = max($finalMaxPredecessorIndex[$finalId] ?? 0, max(0, count($chain) - 2));
+                            }
+                        }
+                        ?>
+                        <div class="small mb-2">
+                            <span class="text-danger font-weight-bold">YG</span>
+                            <span class="text-muted mx-1">yüksek gerilim hattı</span>
+                            <span class="text-primary font-weight-bold">AG</span>
+                            <span class="text-muted">alçak gerilim hattı</span>
+                        </div>
+                        <?php $renderedCommonSuffixes = []; $renderedFinalNodes = []; $renderedDisplayChains = []; $maxPredecessorCount = 3; ?>
+                        <?php
+                        $modelGirisleri = $model->getBeslemeGirisleri();
+                        $kaynakIds = array_values(array_unique(array_filter(array_map(static function ($giris) {
+                            return (string)($giris['kaynak_id'] ?? '');
+                        }, $modelGirisleri))));
+                        $sameSourceCiftGiris = $model->besleme_grubu_tipi === \app\models\Ekipman::BESLEME_GRUBU_CIFT_GIRIS
+                            && count($modelGirisleri) > 1
+                            && count($kaynakIds) === 1
+                            && !empty($beslemeZincirleri);
+                        ?>
+                        <?php if ($sameSourceCiftGiris): ?>
+                            <?php
+                            $firstChain = $beslemeZincirleri[0]['chain'];
+                            $firstChain = array_slice($firstChain, max(0, count($firstChain) - ($maxPredecessorCount + 1)));
+                            if (!empty($firstChain) && (string)($firstChain[count($firstChain) - 1]['id'] ?? '') === (string)$model->id) {
+                                array_pop($firstChain);
+                            }
+                            $sourceNode = !empty($firstChain) ? $firstChain[count($firstChain) - 1] : null;
+                            ?>
+                            <div class="border border-secondary rounded p-2 mb-2 bg-dark">
+                                <div class="small text-info font-weight-bold mb-2">Ortak kaynak yolu</div>
+                                <div class="d-flex align-items-center flex-nowrap mb-2" style="overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px;">
+                                    <?php foreach ($firstChain as $i => $node): ?>
+                                        <?php
+                                        $isTrafo = $isTrafoNode($node);
+                                        $trafoEtiketi = $getTrafoEtiketi($node);
+                                        $nodeGerilim = $getNodeGerilim($firstChain, $i, 'ag');
+                                        $bgClass = $nodeBgClasses[$nodeGerilim] ?? 'bg-dark';
+                                        $borderClass = $isTrafo ? 'border-warning' : 'border-secondary';
+                                        ?>
+                                        <div class="text-center px-2 py-1 border <?= $borderClass ?> rounded <?= $bgClass ?>" style="min-width: 0; white-space: nowrap; flex-shrink: 0;">
+                                            <?= Html::a(
+                                                '<div class="font-weight-bold small">' . ($isTrafo ? '⚡ ' : '') . Html::encode($node['id']) . ($isTrafo ? ' ⚡' : '') . '</div>'
+                                                . '<div style="font-size:.65rem;" class="text-white-50">' . Html::encode($node['tanim']) . '</div>',
+                                                ['ekipman/view', 'id' => $node['id']],
+                                                ['class' => 'text-white text-decoration-none']
+                                            ) ?>
+                                            <?php if ($isTrafo): ?>
+                                                <div style="font-size:.6rem;" class="text-warning"><?= Html::encode($trafoEtiketi) ?></div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($i < count($firstChain) - 1): ?>
+                                            <?php
+                                            $nextNode = $firstChain[$i + 1];
+                                            $hatGerilim = $getSegmentGerilim($firstChain, $i, $nextNode['gerilim_seviyesi'] ?? 'ag');
+                                            $hatRenk = $gerilimRenkleri[$hatGerilim] ?? $gerilimRenkleri['ag'];
+                                            ?>
+                                            <div class="text-center" style="flex-shrink: 0; line-height: 1;">
+                                                <div style="font-size:.52rem;" class="<?= $hatRenk ?>"><?= strtoupper(Html::encode($hatGerilim)) ?></div>
+                                                <div class="<?= $hatRenk ?>" style="font-size: 1rem;">▸</div>
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="pl-3 border-left border-secondary">
+                                    <?php foreach ($modelGirisleri as $sira => $giris): ?>
+                                        <?php
+                                        $salterLabel = trim((string)($giris['salter_kodu'] ?? ''));
+                                        if (!empty($giris['salter_akim'])) {
+                                            $salterLabel .= ($salterLabel === '' ? '' : ' ') . $giris['salter_akim'];
+                                        }
+                                        $hedefLabel = $giris['hedef_salter_kodu'] ?? null;
+                                        ?>
+                                        <div class="d-flex align-items-center flex-nowrap mb-2" style="gap: 4px; overflow-x: auto;">
+                                            <div class="small text-info" style="width: 72px; flex-shrink: 0;">Giriş <?= $sira + 1 ?></div>
+                                            <?php
+                                            $girisGerilim = $giris['gerilim_seviyesi'] ?? 'ag';
+                                            $girisHatRenk = $gerilimRenkleri[$girisGerilim] ?? $gerilimRenkleri['ag'];
+                                            ?>
+                                            <div class="text-center <?= $girisHatRenk ?>" style="flex-shrink: 0; line-height: 1;">
+                                                <?php if ($salterLabel !== ''): ?>
+                                                    <div style="font-size:.55rem;"><?= Html::encode($salterLabel) ?></div>
+                                                <?php endif; ?>
+                                                <div style="font-size:.52rem;"><?= strtoupper(Html::encode($girisGerilim)) ?></div>
+                                                <div style="font-size: 1rem;">▸</div>
+                                            </div>
+                                            <div class="text-center px-2 py-1 border border-primary rounded bg-primary text-white" style="min-width: 0; white-space: nowrap; flex-shrink: 0;">
+                                                <div class="font-weight-bold small"><?= Html::encode($model->id) ?></div>
+                                                <div style="font-size:.65rem;" class="text-white-50"><?= Html::encode($model->MALZEMENIN_TANIMI) ?></div>
+                                            </div>
+                                            <?php if (!empty($hedefLabel)): ?>
+                                                <div class="small text-muted" style="white-space: nowrap; flex-shrink: 0;">Hedef: <?= Html::encode($hedefLabel) ?></div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                        <?php foreach ($beslemeZincirleri as $sira => $zincir): ?>
+                            <?php $giris = $zincir['giris']; $fullChain = $zincir['chain']; ?>
+                            <?php $chain = array_slice($fullChain, max(0, count($fullChain) - ($maxPredecessorCount + 1))); ?>
+                            <?php $trafoIndex = $getTrafoIndex($chain); ?>
+                            <?php
+                            $finalNode = end($chain);
+                            $finalId = (string)($finalNode['id'] ?? '');
+                            $collapseCommonIndex = null;
+                            for ($suffixStart = 1; $suffixStart < count($chain); $suffixStart++) {
+                                $suffixIds = array_map(static function ($node) {
+                                    return (string)($node['id'] ?? '');
+                                }, array_slice($chain, $suffixStart));
+                                $suffixKey = implode('>', $suffixIds);
+                                if ($suffixKey !== '' && isset($renderedCommonSuffixes[$suffixKey])) {
+                                    $collapseCommonIndex = $suffixStart;
+                                    break;
+                                }
+                            }
+                            $collapseToCommon = $collapseCommonIndex !== null;
+                            $collapseFinalNode = !$collapseToCommon && $finalId !== '' && ($finalNodeCounts[$finalId] ?? 0) > 1 && isset($renderedFinalNodes[$finalId]);
+                            $displayChain = $collapseToCommon ? array_slice($chain, 0, $collapseCommonIndex) : ($collapseFinalNode ? array_slice($chain, 0, -1) : $chain);
+                            $leadingSpacerCount = 0;
+                            $displayIds = array_map(static function ($node) {
+                                return (string)($node['id'] ?? '');
+                            }, $displayChain);
+                            $displayKey = implode('>', $displayIds) . '|hedef:' . (string)($giris['hedef_salter_kodu'] ?? '') . '|rol:' . (string)($giris['rol'] ?? '');
+                            if (isset($renderedDisplayChains[$displayKey])) {
+                                continue;
+                            }
+                            $renderedDisplayChains[$displayKey] = true;
+                            ?>
+                            <div class="border border-secondary rounded p-2 mb-2 bg-dark">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                                    <div class="small text-info font-weight-bold">
+                                        Giriş <?= $sira + 1 ?><?= !empty($giris['rol']) ? ' / ' . Html::encode($giris['rol']) : '' ?>
+                                    </div>
+                                    <?php if (!empty($giris['hedef_salter_kodu']) || !empty($giris['kaynak_giris_no']) || !empty($giris['not'])): ?>
+                                        <div class="small text-muted">
+                                            <?php if (!empty($giris['kaynak_giris_no'])): ?>
+                                                Kaynak Giriş: <?= Html::encode($giris['kaynak_giris_no']) ?>
+                                            <?php endif; ?>
+                                            <?php if (!empty($giris['hedef_salter_kodu'])): ?>
+                                                <?= !empty($giris['kaynak_giris_no']) ? ' | ' : '' ?>Hedef: <?= Html::encode($giris['hedef_salter_kodu']) ?>
+                                            <?php endif; ?>
+                                            <?php if (!empty($giris['not'])): ?>
+                                                <?= (!empty($giris['hedef_salter_kodu']) || !empty($giris['kaynak_giris_no'])) ? ' | ' : '' ?><?= Html::encode($giris['not']) ?>
+                                            <?php endif; ?>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
-                                <?php if ($i < count($enerjiKaynagiZinciri) - 1): ?>
+                                <?php if (false && $collapseToCommon): ?>
                                     <?php
-                                    // Sonraki düğümün şalter bilgisi (ok üzerinde etiket)
-                                    $nextNode = $enerjiKaynagiZinciri[$i + 1];
-                                    $salterLabel = '';
-                                    if (!empty($nextNode['salter_kodu'])) {
-                                        $salterLabel = $nextNode['salter_kodu'];
-                                        if (!empty($nextNode['salter_akim'])) {
-                                            $salterLabel .= ' ' . $nextNode['salter_akim'];
-                                        }
+                                    $sourceNode = $chain[0];
+                                    $commonNode = $chain[1] ?? null;
+                                    $hatGerilim = $getSegmentGerilim($chain, 0, $giris['gerilim_seviyesi'] ?? 'ag');
+                                    $hatRenk = $gerilimRenkleri[$hatGerilim] ?? $gerilimRenkleri['ag'];
+                                    ?>
+                                    <div class="d-flex align-items-center flex-nowrap" style="overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px;">
+                                        <div class="text-center px-2 py-1 border border-secondary rounded bg-dark" style="min-width: 0; white-space: nowrap; flex-shrink: 0;">
+                                            <?= Html::a(
+                                                '<div class="font-weight-bold small">' . Html::encode($sourceNode['id']) . '</div>'
+                                                . '<div style="font-size:.65rem;" class="text-muted">' . Html::encode($sourceNode['tanim']) . '</div>',
+                                                ['ekipman/view', 'id' => $sourceNode['id']],
+                                                ['class' => 'text-white text-decoration-none']
+                                            ) ?>
+                                        </div>
+                                        <div class="text-center <?= $hatRenk ?>" style="flex-shrink: 0; line-height: 1;">
+                                            <div style="font-size:.52rem;"><?= strtoupper(Html::encode($hatGerilim)) ?></div>
+                                            <div style="font-size: 1.2rem;">↗</div>
+                                        </div>
+                                        <div class="small text-muted" style="white-space: nowrap; flex-shrink: 0;">
+                                            <?= $commonNode ? Html::encode($commonNode['id']) : 'Ortak hat' ?> ortak hattına bağlanır
+                                        </div>
+                                    </div>
+                                <?php else: ?>
+                                <div class="d-flex align-items-center flex-nowrap" style="overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px;">
+                                    <?php for ($spacer = 0; $spacer < $leadingSpacerCount; $spacer++): ?>
+                                        <div style="width: 170px; flex-shrink: 0;"></div>
+                                        <div style="width: 22px; flex-shrink: 0;"></div>
+                                    <?php endfor; ?>
+                                    <?php foreach ($displayChain as $i => $node): ?>
+                                        <?php
+                                        $isSelf = ($node['id'] === $model->id);
+                                        $isTrafo = $isTrafoNode($node);
+                                        $trafoEtiketi = $getTrafoEtiketi($node);
+                                        $nodeGerilim = $getNodeGerilim($chain, $i, $giris['gerilim_seviyesi'] ?? 'ag');
+                                        $bgClass = $nodeBgClasses[$nodeGerilim] ?? 'bg-dark';
+                                        $borderClass = $isSelf ? 'border-danger' : ($isTrafo ? 'border-warning' : 'border-secondary');
+                                        ?>
+                                        <div class="text-center px-2 py-1 border <?= $borderClass ?> rounded <?= $bgClass ?>" style="min-width: 0; white-space: nowrap; flex-shrink: 0;">
+                                            <?php if ($isSelf): ?>
+                                                <div class="font-weight-bold text-white small"><?= Html::encode($node['id']) ?></div>
+                                                <div style="font-size:.65rem;" class="text-white-50"><?= Html::encode($node['tanim']) ?></div>
+                                            <?php else: ?>
+                                                <?= Html::a(
+                                                    '<div class="font-weight-bold small">' . ($isTrafo ? '⚡ ' : '') . Html::encode($node['id']) . ($isTrafo ? ' ⚡' : '') . '</div>'
+                                                    . '<div style="font-size:.65rem;" class="text-white-50">' . Html::encode($node['tanim']) . '</div>',
+                                                    ['ekipman/view', 'id' => $node['id']],
+                                                    ['class' => 'text-white text-decoration-none']
+                                                ) ?>
+                                            <?php endif; ?>
+                                            <?php if ($isTrafo): ?>
+                                                <div style="font-size:.6rem;" class="text-warning"><?= Html::encode($trafoEtiketi) ?></div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($i < count($displayChain) - 1): ?>
+                                            <?php
+                                            $nextNode = $chain[$i + 1];
+                                            $hatGerilim = $getSegmentGerilim($chain, $i, $nextNode['gerilim_seviyesi'] ?? ($giris['gerilim_seviyesi'] ?? 'ag'));
+                                            $hatRenk = $gerilimRenkleri[$hatGerilim] ?? $gerilimRenkleri['ag'];
+                                            $salterLabel = '';
+                                            if (!empty($nextNode['salter_kodu'])) {
+                                                $salterLabel = $nextNode['salter_kodu'];
+                                                if (!empty($nextNode['salter_akim'])) {
+                                                    $salterLabel .= ' ' . $nextNode['salter_akim'];
+                                                }
+                                            }
+                                            ?>
+                                            <div class="text-center" style="flex-shrink: 0; line-height: 1;">
+                                                <?php if ($salterLabel): ?>
+                                                    <div style="font-size:.55rem;" class="<?= $hatRenk ?>"><?= Html::encode($salterLabel) ?></div>
+                                                <?php endif; ?>
+                                                <div style="font-size:.52rem;" class="<?= $hatRenk ?>"><?= strtoupper(Html::encode($hatGerilim)) ?></div>
+                                                <div class="<?= $hatRenk ?>" style="font-size: 1rem;">▸</div>
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                    <?php if (($collapseFinalNode || $collapseToCommon) && !empty($displayChain)): ?>
+                                        <?php
+                                        $lastDisplayIndex = count($displayChain) - 1;
+                                        $targetNode = $collapseToCommon ? ($chain[$collapseCommonIndex] ?? $finalNode) : $finalNode;
+                                        $targetId = (string)($targetNode['id'] ?? 'Ortak hat');
+                                        $hatGerilim = $getSegmentGerilim($chain, $lastDisplayIndex, $targetNode['gerilim_seviyesi'] ?? ($giris['gerilim_seviyesi'] ?? 'ag'));
+                                        $hatRenk = $gerilimRenkleri[$hatGerilim] ?? $gerilimRenkleri['ag'];
+                                        ?>
+                                        <div class="text-center <?= $hatRenk ?>" style="flex-shrink: 0; line-height: 1;">
+                                            <div style="font-size:.52rem;"><?= strtoupper(Html::encode($hatGerilim)) ?></div>
+                                            <div style="font-size: 1.2rem;">↗</div>
+                                        </div>
+                                        <div class="small text-muted" style="white-space: nowrap; flex-shrink: 0;">
+                                            <?= Html::encode($targetId) ?> ortak geçişine bağlanır
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (!$collapseToCommon): ?>
+                                <?php for ($suffixStart = 1; $suffixStart < count($chain); $suffixStart++): ?>
+                                    <?php
+                                    $suffixIds = array_map(static function ($node) {
+                                        return (string)($node['id'] ?? '');
+                                    }, array_slice($chain, $suffixStart));
+                                    $suffixKey = implode('>', $suffixIds);
+                                    if ($suffixKey !== '') {
+                                        $renderedCommonSuffixes[$suffixKey] = true;
                                     }
                                     ?>
-                                    <div class="text-center" style="flex-shrink: 0; line-height: 1;">
-                                        <?php if ($salterLabel): ?>
-                                            <div style="font-size:.55rem;" class="text-info"><?= Html::encode($salterLabel) ?></div>
-                                        <?php endif; ?>
-                                        <div class="text-warning" style="font-size: 1rem;">▸</div>
-                                    </div>
-                                <?php endif; ?>
-                            <?php endforeach; ?>
-                        </div>
+                                <?php endfor; ?>
+                            <?php endif; ?>
+                            <?php if (!$collapseToCommon && !$collapseFinalNode && $finalId !== ''): ?>
+                                <?php $renderedFinalNodes[$finalId] = true; ?>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
+                <?php endif; ?>
 
-                    <!-- Tek Hat Şemaları (SVG) — silsilenin hemen altında -->
+                    <!-- Tek Hat Şemaları (SVG) -->
                     <?php
                     $svgDokumanlar = array_values(array_filter($teknikDokumanlar ?? [], function ($d) {
-                        return $d->dokuman_turu === 'ELEKTRİK PROJESİ'
+                        return in_array($d->dokuman_turu, ['ELEKTRİK PROJESİ', 'TEK HAT ŞEMASI'], true)
                             && !empty($d->dosya_yolu)
                             && strtolower(pathinfo((string)$d->dosya_yolu, PATHINFO_EXTENSION)) === 'svg';
                     }));
@@ -1093,7 +1583,6 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
                     <?php endif; ?>
 
                     <hr class="border-secondary">
-                <?php endif; ?>
 
                 <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
                     <div class="mb-3">
@@ -1256,15 +1745,105 @@ $markerY = !empty($model->ENLEM) ? $model->ENLEM : ($displayHeight / 2);
         </div>
 
        <div class="tab-pane fade" id="konum" role="tabpanel">
-    <div id="map" style="width:100%; height:600px; border:1px solid #ddd; margin-top:10px;"></div>
+    <div class="d-flex align-items-center flex-wrap mt-2 mb-2" style="gap:6px;">
+        <button type="button" class="btn btn-sm btn-outline-light" id="konumZoomIn">Yakınlaştır +</button>
+        <button type="button" class="btn btn-sm btn-outline-light" id="konumZoomOut">Uzaklaştır -</button>
+        <button type="button" class="btn btn-sm btn-outline-light" id="konumZoomReset">Konuma Git</button>
+        <span class="small text-muted" id="konumMapStatus"></span>
+    </div>
+    <div id="map" style="width:100%; height:600px; border:1px solid #ddd; margin-top:10px; margin-bottom:24px;"></div>
 
   
         <!-- Güncel konumu tutacak gizli alanlar -->
         <input type="hidden" id="enlem" value="<?= Html::encode($model->ENLEM) ?>">
         <input type="hidden" id="boylam" value="<?= Html::encode($model->BOYLAM) ?>">
 
+        <?php if ($hasKonumBesleme): ?>
+            <div class="konum-besleme-panel mb-5">
+                <div class="d-flex align-items-center justify-content-end flex-wrap mb-2">
+                    <div class="small text-muted">Kartlara tıklayınca kroki üzerindeki ekipman belirginleşir.</div>
+                </div>
+                <div class="small mb-2">
+                    <span class="text-danger font-weight-bold">YG</span>
+                    <span class="text-muted mx-1">yüksek gerilim hattı</span>
+                    <span class="text-primary font-weight-bold">AG</span>
+                    <span class="text-muted">alçak gerilim hattı</span>
+                </div>
+                <?php $konumRenderedNodeIds = []; ?>
+                <?php foreach ($konumBeslemeZincirleri as $sira => $zincir): ?>
+                    <?php $chain = $konumChainLimit($zincir['chain'] ?? []); $giris = $zincir['giris'] ?? []; ?>
+                    <?php if (empty($chain)) { continue; } ?>
+                    <?php
+                    $displayChain = [];
+                    $commonTarget = null;
+                    foreach ($chain as $node) {
+                        $nodeId = (string)($node['id'] ?? '');
+                        if ($nodeId !== '' && isset($konumRenderedNodeIds[$nodeId])) {
+                            $commonTarget = $node;
+                            break;
+                        }
+                        $displayChain[] = $node;
+                    }
+                    if (empty($displayChain) && $commonTarget === null) {
+                        continue;
+                    }
+                    ?>
+                    <div class="border border-secondary rounded p-2 mb-2 bg-dark">
+                        <div class="small text-info font-weight-bold mb-2">Giriş <?= $sira + 1 ?><?= !empty($giris['rol']) ? ' / ' . Html::encode($giris['rol']) : '' ?></div>
+                        <div class="d-flex align-items-center flex-nowrap" style="overflow-x:auto; -webkit-overflow-scrolling:touch; gap:6px;">
+                            <?php foreach ($displayChain as $i => $node): ?>
+                                <?php
+                                $nodeId = (string)($node['id'] ?? '');
+                                $isSelfNode = $nodeId === (string)$model->id;
+                                $hasKonum = false;
+                                foreach ($beslemeKonumMarkers as $markerInfo) {
+                                    if ((string)$markerInfo['id'] === $nodeId) {
+                                        $hasKonum = true;
+                                        break;
+                                    }
+                                }
+                                ?>
+                                <button type="button"
+                                        class="btn btn-sm konum-chain-node <?= $isSelfNode ? 'btn-primary active' : 'btn-outline-secondary' ?>"
+                                        data-ekipman-id="<?= Html::encode($nodeId) ?>"
+                                        title="<?= $hasKonum ? 'Krokide göster' : 'Bu ekipmanın kroki konumu yok' ?>">
+                                    <span class="font-weight-bold"><?= Html::encode($nodeId) ?></span>
+                                    <span class="d-block text-truncate" style="max-width:190px; font-size:.65rem;"><?= Html::encode((string)($node['tanim'] ?? '')) ?></span>
+                                </button>
+                                <?php if ($i < count($displayChain) - 1): ?>
+                                    <?php $gerilim = (string)($displayChain[$i + 1]['gerilim_seviyesi'] ?? ($giris['gerilim_seviyesi'] ?? 'ag')); ?>
+                                    <div class="text-center <?= $gerilim === 'yg' ? 'text-danger' : 'text-primary' ?>" style="line-height:1; flex:0 0 auto;">
+                                        <div style="font-size:.52rem;"><?= strtoupper(Html::encode($gerilim)) ?></div>
+                                        <div style="font-size:1rem;">▸</div>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                            <?php if ($commonTarget !== null): ?>
+                                <?php $gerilim = (string)($commonTarget['gerilim_seviyesi'] ?? ($giris['gerilim_seviyesi'] ?? 'ag')); ?>
+                                <div class="text-center <?= $gerilim === 'yg' ? 'text-danger' : 'text-primary' ?>" style="line-height:1; flex:0 0 auto;">
+                                    <div style="font-size:.52rem;"><?= strtoupper(Html::encode($gerilim)) ?></div>
+                                    <div style="font-size:1rem;">↗</div>
+                                </div>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary konum-chain-node"
+                                        data-ekipman-id="<?= Html::encode((string)($commonTarget['id'] ?? '')) ?>">
+                                    <span class="font-weight-bold">Ortak geçiş</span>
+                                    <span class="d-block" style="font-size:.65rem;">bağlanır</span>
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php foreach ($displayChain as $node): ?>
+                        <?php $konumRenderedNodeIds[(string)($node['id'] ?? '')] = true; ?>
+                    <?php endforeach; ?>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <div class="text-muted small mb-5">Bu ekipman için elektrik besleme hattı tanımlı değil.</div>
+        <?php endif; ?>
+
         
-   
+    
 </div>
 
 
@@ -1305,7 +1884,15 @@ function initMap() {
         setTimeout(function() {
             konumMap.invalidateSize();
         }, 50);
-        return;
+        return true;
+    }
+
+    if (typeof L === 'undefined') {
+        var statusEl = document.getElementById('konumMapStatus');
+        if (statusEl) {
+            statusEl.textContent = 'Harita kütüphanesi yüklenemedi. Sayfayı Ctrl+F5 ile yenileyin.';
+        }
+        return false;
     }
 
     console.log('Initializing map...');
@@ -1314,8 +1901,37 @@ function initMap() {
         crs: L.CRS.Simple,
         minZoom: -2,
         maxZoom: 5,
-        zoomSnap: 0.25
+        zoomSnap: 0.25,
+        scrollWheelZoom: true,
+        wheelPxPerZoomLevel: 80,
+        zoomControl: false
     });
+
+    konumMap.scrollWheelZoom.enable();
+    L.control.zoom({ position: 'topleft' }).addTo(konumMap);
+    konumMap.setView([<?= $markerY ?>, <?= $markerX ?>], 1);
+
+    if (!window.__parkBkmKonumWheelZoomBound) {
+        window.__parkBkmKonumWheelZoomBound = true;
+        document.addEventListener('wheel', function(e) {
+            var mapEl = document.getElementById('map');
+            if (!mapEl || !konumMap || !mapEl.contains(e.target)) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            var rect = mapEl.getBoundingClientRect();
+            var point = L.point(e.clientX - rect.left, e.clientY - rect.top);
+            var latLng = konumMap.containerPointToLatLng(point);
+            var step = e.deltaY < 0 ? 0.5 : -0.5;
+            var nextZoom = konumMap.getZoom() + step;
+            nextZoom = Math.max(konumMap.getMinZoom(), Math.min(konumMap.getMaxZoom(), nextZoom));
+
+            konumMap.setZoomAround(latLng, nextZoom);
+        }, {passive: false, capture: true});
+    }
 
     var bounds = [[0, 0], [<?= $displayHeight ?>, <?= $displayWidth ?>]];
 
@@ -1324,24 +1940,90 @@ function initMap() {
 
     var isAdmin = <?= (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin') ? 'true' : 'false' ?>;
 
-    // Marker'ı oluştur ve uygun katmana ekle (modelin EKIPMAN_YERI'sine göre)
-    var marker = L.marker([<?= $markerY ?>, <?= $markerX ?>], { draggable: isAdmin });
-    marker.bindPopup("<b><?= addslashes($model->MALZEMENIN_TANIMI) ?><br><?= addslashes($model->EKIPMAN_YERI) ?></b>");
+    var currentEkipmanId = <?= json_encode((string)$model->id) ?>;
+    var chainMarkerData = <?= $beslemeKonumMarkersJson ?: '[]' ?>;
+    if (!chainMarkerData.length) {
+        chainMarkerData = [{
+            id: currentEkipmanId,
+            title: <?= json_encode((string)$model->MALZEMENIN_TANIMI, JSON_UNESCAPED_UNICODE) ?>,
+            location: <?= json_encode((string)$model->EKIPMAN_YERI, JSON_UNESCAPED_UNICODE) ?>,
+            lat: <?= json_encode((float)$markerY) ?>,
+            lng: <?= json_encode((float)$markerX) ?>,
+            self: true
+        }];
+    }
 
-    // Marker'ı doğrudan haritaya ekle
-    marker.addTo(konumMap);
+    var chainMarkers = {};
 
-    // Marker konumuna zoomla ve merkeze al
-    konumMap.setView([<?= $markerY ?>, <?= $markerX ?>], 1);
-
-    // 🔥 Marker hareket edince gizli alanları güncelle
-    if (isAdmin) {
-        marker.on('dragend', function(e) {
-            var pos = e.target.getLatLng();
-            document.getElementById('enlem').value = pos.lat;
-            document.getElementById('boylam').value = pos.lng;
+    function buildChainIcon(id, active) {
+        return L.divIcon({
+            html: '<div class="chain-map-pin' + (active ? ' is-active' : '') + '">' + id + '</div>',
+            iconSize: null,
+            iconAnchor: [22, 14],
+            popupAnchor: [0, -12],
+            className: 'chain-map-pin-wrap'
         });
+    }
 
+    function popupHtml(item) {
+        return '<b>' + item.id + '</b><br>' + (item.title || '') + '<br><i>' + (item.location || '') + '</i>';
+    }
+
+    chainMarkerData.forEach(function(item) {
+        var isSelf = item.id === currentEkipmanId;
+        var marker = L.marker([item.lat, item.lng], {
+            draggable: isAdmin && isSelf,
+            icon: buildChainIcon(item.id, isSelf)
+        });
+        marker.bindPopup(popupHtml(item));
+        marker.addTo(konumMap);
+        chainMarkers[item.id] = marker;
+
+        if (isAdmin && isSelf) {
+            marker.on('dragend', function(e) {
+                var pos = e.target.getLatLng();
+                document.getElementById('enlem').value = pos.lat;
+                document.getElementById('boylam').value = pos.lng;
+            });
+        }
+    });
+
+    function activateChainItem(id, openPopup) {
+        Object.keys(chainMarkers).forEach(function(markerId) {
+            chainMarkers[markerId].setIcon(buildChainIcon(markerId, markerId === id));
+        });
+        document.querySelectorAll('.konum-chain-node').forEach(function(btn) {
+            var active = btn.getAttribute('data-ekipman-id') === id;
+            btn.classList.toggle('active', active);
+            btn.classList.toggle('btn-primary', active);
+            btn.classList.toggle('btn-outline-secondary', !active);
+        });
+        if (chainMarkers[id]) {
+            var latLng = chainMarkers[id].getLatLng();
+            konumMap.setView(latLng, Math.max(konumMap.getZoom(), 1), {animate: true});
+            if (openPopup) {
+                chainMarkers[id].openPopup();
+            }
+        }
+    }
+
+    document.querySelectorAll('.konum-chain-node').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            activateChainItem(this.getAttribute('data-ekipman-id'), true);
+        });
+    });
+
+    // Varsayılan olarak ilgili ekipmanı merkeze al. Sekme içindeki haritalarda ilk ölçüm
+    // bazen eksik kaldığı için kısa gecikmeyle invalidate + setView tekrar edilir.
+    activateChainItem(currentEkipmanId, false);
+    konumMap.closePopup();
+    setTimeout(function() {
+        konumMap.invalidateSize(true);
+        konumMap.setView([<?= $markerY ?>, <?= $markerX ?>], Math.max(konumMap.getZoom(), 1), {animate: false});
+        konumMap.closePopup();
+    }, 150);
+
+    if (isAdmin) {
         // --- Custom Leaflet Save Button ---
         var saveControl = L.Control.extend({
             options: { position: 'topright' },
@@ -1402,7 +2084,40 @@ function initMap() {
     }
 
     console.log("Map initialized.");
+    return true;
 }
+
+    function zoomKonumMap(delta) {
+        if (!initMap()) {
+            return;
+        }
+        var nextZoom = konumMap.getZoom() + delta;
+        nextZoom = Math.max(konumMap.getMinZoom(), Math.min(konumMap.getMaxZoom(), nextZoom));
+        konumMap.setZoom(nextZoom);
+    }
+
+    var konumZoomIn = document.getElementById('konumZoomIn');
+    var konumZoomOut = document.getElementById('konumZoomOut');
+    var konumZoomReset = document.getElementById('konumZoomReset');
+
+    if (konumZoomIn) {
+        konumZoomIn.addEventListener('click', function() {
+            zoomKonumMap(0.5);
+        });
+    }
+    if (konumZoomOut) {
+        konumZoomOut.addEventListener('click', function() {
+            zoomKonumMap(-0.5);
+        });
+    }
+    if (konumZoomReset) {
+        konumZoomReset.addEventListener('click', function() {
+            if (!initMap()) {
+                return;
+            }
+            konumMap.setView([<?= $markerY ?>, <?= $markerX ?>], 1, {animate: true});
+        });
+    }
 
     if (document.getElementById('konum-tab') && document.getElementById('konum-tab').classList.contains('active')) {
         setTimeout(initMap, 100);
@@ -1414,7 +2129,7 @@ function initMap() {
 
 // SVG Tek Hat Şeması: katmanlı sayfa, SVG attribute zoom (vektörel kalite), pan
 (function() {
-    var ekipmanViewBase = '<?= Url::to(["ekipman/view"]) ?>';
+    var ekipmanViewPattern = '<?= Url::to(["/ekipman/view", "id" => "__EKIPMAN_ID__"]) ?>';
     var ekipmanPattern = /^[A-ZÇĞİÖŞÜ]{2,5}-[A-ZÇĞİÖŞÜ0-9]{1,6}-\d{1,3}$/;
     var tekHatBtn = document.getElementById('tekHatToggleBtn');
     var tekHatContainer = document.getElementById('tekHatContainer');
@@ -1602,7 +2317,7 @@ function initMap() {
                 svg.style.display = 'block';
 
                 function openEkipmanLink(code) {
-                    window.open(ekipmanViewBase + '&id=' + encodeURIComponent(code), '_blank');
+                    window.open(ekipmanViewPattern.replace('__EKIPMAN_ID__', encodeURIComponent(code)), '_blank');
                 }
 
                 svg.querySelectorAll('text').forEach(function(textEl) {

@@ -73,52 +73,6 @@ $this->registerCss(<<<CSS
 }
 
 @media (max-width: 767.98px) {
-    .bakim-takip-index .grid-view table,
-    .bakim-takip-index .grid-view thead,
-    .bakim-takip-index .grid-view tbody,
-    .bakim-takip-index .grid-view th,
-    .bakim-takip-index .grid-view td,
-    .bakim-takip-index .grid-view tr {
-        display: block;
-        width: 100%;
-    }
-
-    .bakim-takip-index .grid-view thead {
-        display: none;
-    }
-
-    .bakim-takip-index .grid-view tbody tr {
-        margin-bottom: 1rem;
-        border: 1px solid rgba(255,255,255,.08);
-        border-radius: .5rem;
-        overflow: hidden;
-        background: rgba(255,255,255,.02);
-    }
-
-    .bakim-takip-index .grid-view tbody td {
-        border: 0;
-        border-bottom: 1px solid rgba(255,255,255,.06);
-        padding: .6rem .75rem;
-    }
-
-    .bakim-takip-index .grid-view tbody td:last-child {
-        border-bottom: 0;
-    }
-
-    .bakim-takip-index .grid-view tbody td::before {
-        content: attr(data-label);
-        display: block;
-        font-size: .78rem;
-        color: #9aa4ad;
-        margin-bottom: .3rem;
-        text-transform: uppercase;
-        letter-spacing: .03em;
-    }
-
-    .bakim-takip-index .grid-view tbody td[data-label=""]::before {
-        display: none;
-    }
-
     .bakim-is-ozet,
     .bakim-ekipman-hucre {
         min-width: 0;
@@ -127,6 +81,51 @@ $this->registerCss(<<<CSS
 
     .bakim-is-preview.is-clamped {
         -webkit-line-clamp: 4;
+    }
+}
+
+.bakim-desktop-grid {}
+.bakim-mobile-list { display: none; }
+.bakim-mobile-card {
+    display: block;
+    color: #fff;
+    text-decoration: none;
+    border: 1px solid #495057;
+    border-radius: 10px;
+    background: #1f2428;
+}
+.bakim-mobile-card:hover {
+    color: #fff;
+    border-color: #ffc107;
+    text-decoration: none;
+}
+.bakim-mobile-date {
+    color: #ffc107;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.bakim-mobile-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.bakim-mobile-work {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    color: #cbd5e1;
+    font-size: .86rem;
+    white-space: pre-line;
+}
+@media (max-width: 767.98px) {
+    .bakim-desktop-grid { display: none; }
+    .bakim-mobile-list {
+        display: grid;
+        gap: .55rem;
     }
 }
 CSS);
@@ -250,11 +249,16 @@ $renderYapilanIs = static function (BakimTakip $model): string {
             echo Html::a('Yeni Kayıt Ekle', ['create'], ['class' => 'btn btn-success']);
         }
         ?>
+        <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
+            <button type="button" class="btn btn-success ml-1" onclick="document.getElementById('bakimAktarPanel').style.display = document.getElementById('bakimAktarPanel').style.display==='none' ? 'block':'none'">
+                Toplu Bakım Aktar
+            </button>
+        <?php endif; ?>
     
 
    <?php if (!Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin','editor'])): ?>
        <?= Html::a('Excel İndir', ['/bakim-takip/export-excel'], [
-           'class' => 'btn btn-primary',
+           'class' => 'btn btn-primary ml-1',
            'data-pjax' => 0,
            'id' => 'bakimtakip-export-btn',
            'data-base-url' => Url::to(['/bakim-takip/export-excel']),
@@ -262,6 +266,28 @@ $renderYapilanIs = static function (BakimTakip $model): string {
     <?php endif; ?>
 
     </p>
+    <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
+    <div id="bakimAktarPanel" style="display:none;" class="card bg-dark border-secondary mb-3">
+        <div class="card-body py-3">
+            <div class="font-weight-bold mb-2">Toplu Bakım Aktar</div>
+            <?= Html::beginForm(['bakim-takip/toplu-aktar'], 'post', ['enctype' => 'multipart/form-data', 'class' => 'd-flex align-items-center flex-wrap mb-0']) ?>
+                <input type="file" name="bakim_excel" accept=".xlsx,.xls,.csv" class="form-control-file mr-2 mb-2" style="max-width: 360px;" required>
+                <button type="submit" class="btn btn-success btn-sm mb-2">Yükle</button>
+                <a href="#" class="btn btn-outline-info btn-sm ml-2 mb-2" id="ornekBakimCsvIndir">Örnek CSV</a>
+            <?= Html::endForm() ?>
+        </div>
+    </div>
+    <script>
+    document.getElementById('ornekBakimCsvIndir') && document.getElementById('ornekBakimCsvIndir').addEventListener('click', function(e) {
+        e.preventDefault();
+        var csv = "BAKIM_GENEL;PERIYODIK_PLANLI;TARIH;BAKIM_SURESI_SAAT;YERI;SISTEM_CIHAZ_OZELLIK;YAPILAN_IS;ISI_YAPANLAR;EKIPMAN_ID\n" +
+            "BAKIM;PLANLI;16.06.2026;1;SAHA;ORNEK EKIPMAN;Planlı bakım yapıldı.;Metin Sarıtaş;ORNEK-01\n";
+        var blob = new Blob(["\uFEFF" + csv], {type: 'text/csv;charset=utf-8'});
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = 'bakim_takip_toplu_aktar_ornek.csv'; a.click();
+    });
+    </script>
+    <?php endif; ?>
     <?php // echo $this->render('_search', ['model' => $searchModel]); ?>
 
     <input type="text" id="bakimtakip-live-search" class="form-control mb-2" placeholder="🔍 Ara... (Sistem/cihaz, yapılan iş, yer, işi yapanlar...)" value="<?= Html::encode($searchModel->globalSearch ?? '') ?>" autocomplete="off">
@@ -270,6 +296,7 @@ $renderYapilanIs = static function (BakimTakip $model): string {
 
     <?php Pjax::begin(['id' => 'bakimtakip-pjax', 'enablePushState' => false]); ?>
 
+    <div class="bakim-desktop-grid">
     <?= GridView::widget([
         'dataProvider' => $dataProvider,
         'filterModel' => $searchModel,
@@ -336,6 +363,26 @@ $renderYapilanIs = static function (BakimTakip $model): string {
             ],
         ],
     ]); ?>
+    </div>
+
+    <div class="bakim-mobile-list">
+        <?php foreach ($dataProvider->getModels() as $model): ?>
+            <?php
+            $ekipmanText = trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], ' ', $renderEkipmanBaglantisi($model))));
+            $isText = trim((string)$model->YAPILAN_IS);
+            ?>
+            <?= Html::a(
+                '<div class="d-flex justify-content-between align-items-start gap-2 mb-1">'
+                    . '<div class="bakim-mobile-date">' . Html::encode(Yii::$app->formatter->asDate($model->TARIH, 'php:d.m.Y')) . '</div>'
+                    . '<span class="btn btn-sm btn-outline-warning py-0 px-2">Detay</span>'
+                . '</div>'
+                . '<div class="bakim-mobile-title mb-1">' . Html::encode($ekipmanText !== '' ? $ekipmanText : (string)$model->SISTEM_CIHAZ_OZELLIK) . '</div>'
+                . '<div class="bakim-mobile-work">' . Html::encode($isText !== '' ? $isText : '-') . '</div>',
+                ['view', 'id' => $model->id],
+                ['class' => 'bakim-mobile-card p-2']
+            ) ?>
+        <?php endforeach; ?>
+    </div>
 
 
     <?php Pjax::end(); ?>

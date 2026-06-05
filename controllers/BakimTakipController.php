@@ -13,8 +13,11 @@ use yii\web\Controller;
 use yii\web\NotFoundHttpException;
 use yii\filters\VerbFilter;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as SpreadsheetDate;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use yii\web\Response;
+use yii\web\UploadedFile;
 
 /**
  * BakimTakipController implements the CRUD actions for BakimTakip model.
@@ -54,7 +57,7 @@ class BakimTakipController extends Controller
                             'roles' => ['@'], // Giriş yapmış kullanıcılar
                         ],
                         [
-                            'actions' => ['update', 'delete'],
+                            'actions' => ['update', 'delete', 'toplu-aktar'],
                             'allow' => true,
                             'roles' => ['@'],
                             'matchCallback' => function ($rule, $action) {
@@ -68,6 +71,7 @@ class BakimTakipController extends Controller
                     'class' => VerbFilter::className(),
                     'actions' => [
                         'delete' => ['POST'],
+                        'toplu-aktar' => ['POST'],
                     ],
                 ],
             ]
@@ -169,6 +173,102 @@ class BakimTakipController extends Controller
         });
 
         return $response;
+    }
+
+    public function actionTopluAktar()
+    {
+        $file = UploadedFile::getInstanceByName('bakim_excel');
+        if ($file === null) {
+            Yii::$app->session->setFlash('error', 'Lütfen Excel veya CSV dosyası seçiniz.');
+            return $this->redirect(['index']);
+        }
+
+        $extension = strtolower((string)$file->extension);
+        if (!in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
+            Yii::$app->session->setFlash('error', 'Sadece .xlsx, .xls veya .csv dosyası yüklenebilir.');
+            return $this->redirect(['index']);
+        }
+
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            if ($extension === 'csv') {
+                $reader = IOFactory::createReader('Csv');
+                $reader->setDelimiter($this->detectBakimCsvDelimiter($file->tempName));
+                $reader->setInputEncoding('UTF-8');
+                $spreadsheet = $reader->load($file->tempName);
+            } else {
+                $spreadsheet = IOFactory::load($file->tempName);
+            }
+
+            $sheet = $spreadsheet->getActiveSheet();
+            $highestRow = $sheet->getHighestDataRow();
+            $highestColumn = $sheet->getHighestDataColumn();
+            $rows = $sheet->rangeToArray('A1:' . $highestColumn . $highestRow, null, true, true, true);
+
+            $headerRowNumber = $this->findBakimImportHeaderRow($rows);
+            if ($headerRowNumber === null) {
+                throw new \RuntimeException('Başlık satırı bulunamadı. En az Tarih veya Yapılan İş başlığı olmalı.');
+            }
+
+            $columnMap = $this->buildBakimImportColumnMap($rows[$headerRowNumber]);
+            $created = 0;
+            $skipped = 0;
+            $errors = [];
+
+            for ($rowNumber = $headerRowNumber + 1; $rowNumber <= $highestRow; $rowNumber++) {
+                $row = $rows[$rowNumber] ?? [];
+                if ($this->isBakimImportRowEmpty($row)) {
+                    continue;
+                }
+
+                $model = new BakimTakip();
+                foreach (['BAKIM_GENEL', 'PERIYODIK_PLANLI', 'YERI', 'SISTEM_CIHAZ_OZELLIK', 'YAPILAN_IS', 'ISI_YAPANLAR'] as $attribute) {
+                    $value = $this->getBakimImportCellValue($row, $columnMap, $attribute);
+                    if ($value !== null) {
+                        $model->$attribute = trim((string)$value);
+                    }
+                }
+
+                $model->TARIH = $this->normalizeBakimImportDate($this->getBakimImportCellValue($row, $columnMap, 'TARIH'));
+                $sure = trim((string)$this->getBakimImportCellValue($row, $columnMap, 'BAKIM_SURESI_SAAT'));
+                $model->BAKIM_SURESI_SAAT = $sure === '' ? 0 : str_replace(',', '.', $sure);
+                $model->ekipmanIds = $this->parseBakimImportEkipmanIds($this->getBakimImportCellValue($row, $columnMap, 'ekipmanIds'));
+                if (empty($model->ekipmanIds)) {
+                    $model->ekipmanIds = $this->extractBakimImportEkipmanIdsFromText((string)$model->SISTEM_CIHAZ_OZELLIK);
+                }
+
+                if (trim((string)$model->TARIH) === '' && trim((string)$model->YAPILAN_IS) === '') {
+                    $skipped++;
+                    $errors[] = $rowNumber . '. satır atlandı: Tarih veya Yapılan İş boş.';
+                    continue;
+                }
+
+                if (!$model->save()) {
+                    $skipped++;
+                    $message = implode(' | ', array_map(static function ($items) {
+                        return implode(', ', $items);
+                    }, $model->getErrors()));
+                    $errors[] = $rowNumber . '. satır kaydedilemedi: ' . $message;
+                    continue;
+                }
+
+                $this->syncGeneratedPlanliBakimKayitlari($model);
+                $created++;
+            }
+
+            $transaction->commit();
+
+            $message = "Toplu bakım aktarımı tamamlandı. Yeni: {$created}, hatalı atlanan: {$skipped}.";
+            if (!empty($errors)) {
+                $message .= '<br>İlk uyarılar:<br>' . implode('<br>', array_slice(array_map('htmlspecialchars', $errors), 0, 10));
+            }
+            Yii::$app->session->setFlash($skipped > 0 ? 'warning' : 'success', $message);
+        } catch (\Throwable $e) {
+            $transaction->rollBack();
+            Yii::$app->session->setFlash('error', 'Toplu bakım aktarımı sırasında hata oluştu: ' . $e->getMessage());
+        }
+
+        return $this->redirect(['index']);
     }
 
     /**
@@ -466,6 +566,171 @@ class BakimTakipController extends Controller
                 throw new \RuntimeException('Planlı bakım güncellenemedi (ID: ' . (int)$planli->id . '): ' . $hata);
             }
         }
+    }
+
+    private function findBakimImportHeaderRow(array $rows): ?int
+    {
+        foreach ($rows as $rowNumber => $row) {
+            $map = $this->buildBakimImportColumnMap($row);
+            if (!empty($map['TARIH']) || !empty($map['YAPILAN_IS'])) {
+                return (int)$rowNumber;
+            }
+        }
+
+        return null;
+    }
+
+    private function buildBakimImportColumnMap(array $headerRow): array
+    {
+        $aliases = [
+            'BAKIM_GENEL' => ['bakim genel', 'bakım genel'],
+            'PERIYODIK_PLANLI' => ['periyodik planli', 'periyodik planlı', 'planli', 'planlı'],
+            'TARIH' => ['tarih', 'bakim tarihi', 'bakım tarihi'],
+            'BAKIM_SURESI_SAAT' => ['bakim suresi saat', 'bakım süresi saat', 'bakim suresi', 'bakım süresi', 'sure', 'süre'],
+            'YERI' => ['yeri', 'yer'],
+            'SISTEM_CIHAZ_OZELLIK' => ['sistem cihaz ozellik', 'sistem cihaz özellik', 'sistem/cihaz ozellik', 'sistem/cihaz özellik', 'ekipman', 'cihaz'],
+            'YAPILAN_IS' => ['yapilan is', 'yapılan iş', 'is', 'iş'],
+            'ISI_YAPANLAR' => ['isi yapanlar', 'işi yapanlar', 'isi yapanlarin adi soyadi', 'işi yapanların adı soyadı', 'yapanlar'],
+            'ekipmanIds' => ['ekipman id', 'ekipman ids', 'ekipman kodu', 'ekipman kodlari', 'ekipman kodları'],
+        ];
+
+        $normalizedAliases = [];
+        foreach ($aliases as $attribute => $labels) {
+            foreach ($labels as $label) {
+                $normalizedAliases[] = ['attribute' => $attribute, 'label' => $this->normalizeBakimImportHeader($label)];
+            }
+        }
+
+        usort($normalizedAliases, static fn($a, $b): int => strlen($b['label']) <=> strlen($a['label']));
+
+        $map = [];
+        foreach ($headerRow as $column => $label) {
+            $normalizedLabel = $this->normalizeBakimImportHeader((string)$label);
+            if ($normalizedLabel === '') {
+                continue;
+            }
+
+            foreach ($normalizedAliases as $candidate) {
+                if ($normalizedLabel === $candidate['label']) {
+                    $map[$candidate['attribute']] = $column;
+                    continue 2;
+                }
+            }
+
+            foreach ($normalizedAliases as $candidate) {
+                if (strlen($candidate['label']) > 3 && preg_match('/(^| )' . preg_quote($candidate['label'], '/') . '( |$)/', $normalizedLabel)) {
+                    $map[$candidate['attribute']] = $column;
+                    continue 2;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    private function normalizeBakimImportHeader(string $value): string
+    {
+        $value = strtr($value, [
+            'İ' => 'I', 'I' => 'I', 'Ğ' => 'G', 'Ü' => 'U', 'Ş' => 'S', 'Ö' => 'O', 'Ç' => 'C',
+            'ı' => 'i', 'ğ' => 'g', 'ü' => 'u', 'ş' => 's', 'ö' => 'o', 'ç' => 'c',
+        ]);
+        $value = trim(mb_strtolower($value, 'UTF-8'));
+        $value = preg_replace('/[^a-z0-9]+/u', ' ', $value);
+
+        return trim((string)$value);
+    }
+
+    private function detectBakimCsvDelimiter(string $filePath): string
+    {
+        $handle = fopen($filePath, 'rb');
+        $line = $handle ? (string)fgets($handle) : '';
+        if ($handle) {
+            fclose($handle);
+        }
+
+        $delimiters = [',' => substr_count($line, ','), ';' => substr_count($line, ';'), "\t" => substr_count($line, "\t")];
+        arsort($delimiters);
+
+        return (string)array_key_first($delimiters);
+    }
+
+    private function isBakimImportRowEmpty(array $row): bool
+    {
+        foreach ($row as $value) {
+            if (trim((string)$value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function getBakimImportCellValue(array $row, array $columnMap, string $attribute)
+    {
+        if (empty($columnMap[$attribute])) {
+            return null;
+        }
+
+        return $row[$columnMap[$attribute]] ?? null;
+    }
+
+    private function normalizeBakimImportDate($value): ?string
+    {
+        if ($value === null || trim((string)$value) === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return SpreadsheetDate::excelToDateTimeObject((float)$value)->format('Y-m-d');
+        }
+
+        $text = trim((string)$value);
+        foreach (['d.m.Y', 'd/m/Y', 'Y-m-d', 'd-m-Y'] as $format) {
+            $date = \DateTime::createFromFormat($format, $text);
+            if ($date instanceof \DateTime) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        $timestamp = strtotime($text);
+        return $timestamp === false ? $text : date('Y-m-d', $timestamp);
+    }
+
+    private function parseBakimImportEkipmanIds($value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        $parts = preg_split('/[;,\n\r\t]+/u', (string)$value) ?: [];
+        $ids = [];
+        foreach ($parts as $part) {
+            $id = trim($part);
+            if ($id !== '') {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    private function extractBakimImportEkipmanIdsFromText(string $text): array
+    {
+        if (trim($text) === '') {
+            return [];
+        }
+
+        preg_match_all('/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+/', $text, $matches);
+        $candidates = array_values(array_unique(array_map('trim', $matches[0] ?? [])));
+        if (empty($candidates)) {
+            return [];
+        }
+
+        return Ekipman::find()
+            ->select('id')
+            ->where(['id' => $candidates])
+            ->orderBy(['id' => SORT_ASC])
+            ->column();
     }
 
     private function normalizeBakimPeriyoduToPlanli(string $value): ?string

@@ -36,7 +36,7 @@ $this->params['breadcrumbs'][] = $this->title;
                 <div class="card-body p-3">
                     <div class="small text-muted">Toplam Ekipman</div>
                     <div class="h3 mb-0"><?= Html::a((string)(int)($summary['toplamEkipman'] ?? 0), ['/ekipman/index'], ['class' => 'text-white text-decoration-none']) ?></div>
-                    <div class="small text-muted">Aktif: <?= Html::a((string)(int)($summary['aktifEkipman'] ?? 0), ['/ekipman/index', 'EkipmanSearch[DURUM]' => 'AKTIF'], ['class' => 'text-decoration-none']) ?> · Hurda: <?= Html::a((string)(int)($summary['hurdaEkipman'] ?? 0), ['/ekipman/index', 'EkipmanSearch[DURUM]' => 'HURDA'], ['class' => 'text-warning text-decoration-none']) ?></div>
+                    <div class="small text-muted">Aktif: <?= Html::a((string)(int)($summary['aktifEkipman'] ?? 0), ['/ekipman/index', 'EkipmanSearch[DURUM]' => 'AKTIF'], ['class' => 'text-decoration-none']) ?> · Kullanım dışı: <?= Html::a((string)(int)($summary['kullanimDisiEkipman'] ?? 0), ['/ekipman/index', 'EkipmanSearch[DURUM]' => 'KULLANIM_DISI'], ['class' => 'text-warning text-decoration-none']) ?> · Hurda: <?= Html::a((string)(int)($summary['hurdaEkipman'] ?? 0), ['/ekipman/index', 'EkipmanSearch[DURUM]' => 'HURDA'], ['class' => 'text-warning text-decoration-none']) ?></div>
                 </div>
             </div>
         </div>
@@ -56,6 +56,8 @@ $this->params['breadcrumbs'][] = $this->title;
                     <div class="small text-muted">Bakım</div>
                     <div class="h3 mb-0 text-info"><?= Html::a((string)(int)($summary['buAyBakim'] ?? 0), ['/bakim-takip/index', 'BakimTakipSearch[quickFilter]' => 'this-month'], ['class' => 'text-info text-decoration-none']) ?></div>
                     <div class="small text-muted">Bu Ay · Toplam: <?= Html::a((string)(int)($summary['toplamBakim'] ?? 0), ['/bakim-takip/index'], ['class' => 'text-decoration-none']) ?></div>
+                    <div class="small text-muted">Planlı Gecikmiş: <?= Html::a((string)(int)($summary['planliGecikmis'] ?? 0), ['/site/index', 'quick' => 'planli-gecikmis', '#' => 'home-planli-grid'], ['class' => 'text-decoration-none text-warning']) ?></div>
+                    <div class="small text-muted">Bugün Son Gün: <?= Html::a((string)(int)($summary['planliSonGun'] ?? 0), ['/site/index', 'quick' => 'planli-son-gun', '#' => 'home-planli-grid'], ['class' => 'text-decoration-none text-warning']) ?></div>
                     <div class="small text-muted">Planlı (10 gün): <?= Html::a((string)(int)($summary['planliYaklasan10'] ?? 0), ['/site/index', '#' => 'home-planli-grid'], ['class' => 'text-decoration-none']) ?></div>
                 </div>
             </div>

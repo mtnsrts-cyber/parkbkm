@@ -17,6 +17,7 @@ use yii\web\NotFoundHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
+use yii\db\Expression;
 use yii\web\Response;
 use yii\web\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -32,7 +33,7 @@ class EkipmanController extends Controller
     return [
         'access' => [
             'class' => \yii\filters\AccessControl::class,
-            'only' => ['create','update','delete','hurdaya-ayir','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','enerji-kaynagi-aktar','toplu-aktar','analizor-create','analizor-update','analizor-delete'],
+            'only' => ['create','update','delete','hurdaya-ayir','kullanim-disi','aktife-al','dokuman-ekle','dokuman-sil','tanitim-foto-yukle','tanitim-foto-sil','etiket-foto-yukle','etiket-foto-sil','enerji-kaynagi-aktar','toplu-aktar','analizor-create','analizor-update','analizor-delete'],
             'rules' => [
                 [
                     'allow' => true,
@@ -50,7 +51,7 @@ class EkipmanController extends Controller
                 [
                     'allow' => true,
                     'roles' => ['@'],
-                    'actions' => ['hurdaya-ayir', 'aktife-al', 'dokuman-ekle', 'dokuman-sil', 'tanitim-foto-yukle', 'tanitim-foto-sil', 'enerji-kaynagi-aktar'],
+                    'actions' => ['hurdaya-ayir', 'kullanim-disi', 'aktife-al', 'dokuman-ekle', 'dokuman-sil', 'tanitim-foto-yukle', 'tanitim-foto-sil', 'etiket-foto-yukle', 'etiket-foto-sil', 'enerji-kaynagi-aktar'],
                     'matchCallback' => function () {
                         return !Yii::$app->user->isGuest
                             && in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true);
@@ -63,11 +64,14 @@ class EkipmanController extends Controller
             'actions' => [
                 'delete' => ['post'],
                 'hurdaya-ayir' => ['post'],
+                'kullanim-disi' => ['post'],
                 'aktife-al' => ['post'],
                 'dokuman-ekle' => ['post'],
                 'dokuman-sil' => ['post'],
                 'tanitim-foto-yukle' => ['post'],
                 'tanitim-foto-sil' => ['post'],
+                'etiket-foto-yukle' => ['post'],
+                'etiket-foto-sil' => ['post'],
                 'enerji-kaynagi-aktar' => ['post'],
                 'toplu-aktar' => ['post'],
             ],
@@ -79,11 +83,46 @@ class EkipmanController extends Controller
     public function actionIndex()
 {
     $searchModel = new \app\models\EkipmanSearch();
-    $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
+    $queryParams = Yii::$app->request->queryParams;
+    if (!isset($queryParams['EkipmanSearch'])) {
+        $queryParams['EkipmanSearch']['DURUM'] = 'AKTIF';
+    }
 
+    $dataProvider = $searchModel->search($queryParams);
+
+    $cinsList = Ekipman::find()
+        ->select('EKIPMAN_CINSI')
+        ->where(['not', ['EKIPMAN_CINSI' => null]])
+        ->andWhere(['<>', 'EKIPMAN_CINSI', ''])
+        ->distinct()
+        ->orderBy(['EKIPMAN_CINSI' => SORT_ASC])
+        ->column();
+
+    $turRows = Ekipman::find()
+        ->select(['EKIPMAN_CINSI', 'EKIPMAN_TURU'])
+        ->where(['not', ['EKIPMAN_TURU' => null]])
+        ->andWhere(['<>', 'EKIPMAN_TURU', ''])
+        ->distinct()
+        ->orderBy(['EKIPMAN_CINSI' => SORT_ASC, 'EKIPMAN_TURU' => SORT_ASC])
+        ->asArray()
+        ->all();
+
+    $turList = [];
+    $turByCins = [];
+    foreach ($turRows as $row) {
+        $cins = (string)($row['EKIPMAN_CINSI'] ?? '');
+        $tur = (string)($row['EKIPMAN_TURU'] ?? '');
+        $turList[$tur] = $tur;
+        $turByCins[$cins][$tur] = $tur;
+    }
+
+    $cinsList = array_combine($cinsList, $cinsList) ?: [];
     return $this->render('index', [
         'searchModel' => $searchModel,
         'dataProvider' => $dataProvider,
+        'cinsList' => $cinsList,
+        'turList' => $turList,
+        'turByCins' => $turByCins,
     ]);
 }
 
@@ -190,10 +229,16 @@ public function actionExportPdf()
         // Bu ekipman için periyot bazlı son + sonraki bakım tarihleri
         $nextBakimlar = PlanliBakim::getNextDueDatesByPeriodForEkipman($model->id);
 
+        $latestPeriyodikCondition = $this->latestPeriyodikKontrolCondition('pk');
         $periyodikKontrolDataProvider = new ActiveDataProvider([
             'query' => PeriyodikKontrol::find()
-                ->where(['ekipman_id' => $model->id])
-                ->orderBy(['gelecek_kontrol_tarihi' => SORT_ASC]),
+                ->alias('pk')
+                ->select([
+                    'pk.*',
+                    'is_eski' => new Expression('CASE WHEN ' . $latestPeriyodikCondition . ' THEN 0 ELSE 1 END'),
+                ])
+                ->where(['pk.ekipman_id' => $model->id])
+                ->orderBy(['is_eski' => SORT_ASC, 'pk.gelecek_kontrol_tarihi' => SORT_ASC]),
             'pagination' => false,
             'sort' => false,
         ]);
@@ -218,17 +263,21 @@ public function actionExportPdf()
 
         $todayStr = date('Y-m-d');
         $nextPeriyodikKontrol = PeriyodikKontrol::find()
-            ->where(['ekipman_id' => $model->id])
-            ->andWhere(['IS NOT', 'gelecek_kontrol_tarihi', null])
-            ->andWhere(['>=', 'gelecek_kontrol_tarihi', $todayStr])
-            ->orderBy(['gelecek_kontrol_tarihi' => SORT_ASC])
+            ->alias('pk')
+            ->where(['pk.ekipman_id' => $model->id])
+            ->andWhere(['IS NOT', 'pk.gelecek_kontrol_tarihi', null])
+            ->andWhere(['>=', 'pk.gelecek_kontrol_tarihi', $todayStr])
+            ->andWhere($latestPeriyodikCondition)
+            ->orderBy(['pk.gelecek_kontrol_tarihi' => SORT_ASC])
             ->one();
 
         if ($nextPeriyodikKontrol === null) {
             $nextPeriyodikKontrol = PeriyodikKontrol::find()
-                ->where(['ekipman_id' => $model->id])
-                ->andWhere(['IS NOT', 'gelecek_kontrol_tarihi', null])
-                ->orderBy(['gelecek_kontrol_tarihi' => SORT_DESC])
+                ->alias('pk')
+                ->where(['pk.ekipman_id' => $model->id])
+                ->andWhere(['IS NOT', 'pk.gelecek_kontrol_tarihi', null])
+                ->andWhere($latestPeriyodikCondition)
+                ->orderBy(['pk.gelecek_kontrol_tarihi' => SORT_DESC])
                 ->one();
         }
 
@@ -241,8 +290,12 @@ public function actionExportPdf()
             return in_array($doc->dokuman_turu, ['BAKIM FORMU', 'BAKIM TALİMATI'], true);
         }));
 
+        $etiketFotograflari = array_values(array_filter($dokumanlar, function ($doc) {
+            return $doc->dokuman_turu === 'ETİKET FOTOĞRAFI' && !empty($doc->dosya_yolu);
+        }));
+
         $teknikDokumanlar = array_values(array_filter($dokumanlar, function ($doc) {
-            return in_array($doc->dokuman_turu, ['ELEKTRİK PROJESİ', 'KULLANMA KLAVUZU', 'BROŞÜR'], true);
+            return in_array($doc->dokuman_turu, ['ELEKTRİK PROJESİ', 'TEK HAT ŞEMASI', 'KULLANMA KLAVUZU', 'BROŞÜR'], true);
         }));
 
         $teknikDosyaSecenekleri = $this->getTeknikDosyaSecenekleri();
@@ -258,6 +311,7 @@ public function actionExportPdf()
             'arizaTakipDataProvider' => $arizaTakipDataProvider,
             'nextPeriyodikKontrol' => $nextPeriyodikKontrol,
             'bakimDokumanlari' => $bakimDokumanlari,
+            'etiketFotograflari' => $etiketFotograflari,
             'teknikDokumanlar' => $teknikDokumanlar,
             'teknikDosyaSecenekleri' => $teknikDosyaSecenekleri,
             'analizorConfig' => $analizorConfig,
@@ -341,6 +395,95 @@ public function actionExportPdf()
         $this->deleteTanitimFotoFile($oldRelativePath);
 
         Yii::$app->session->setFlash('success', 'Tanıtım fotoğrafı kaldırıldı.');
+        return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+    }
+
+    public function actionEtiketFotoYukle($id)
+    {
+        $model = $this->findModel($id);
+
+        if (Yii::$app->user->isGuest || !in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true)) {
+            throw new ForbiddenHttpException('Bu işlem için yetkiniz yok.');
+        }
+
+        $uploadedFile = UploadedFile::getInstanceByName('etiket_foto');
+        if ($uploadedFile === null) {
+            Yii::$app->session->setFlash('error', 'Yüklenecek bir etiket fotoğrafı seçilmedi.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+        $extension = strtolower((string)$uploadedFile->extension);
+        if (!in_array($extension, $allowedExtensions, true)) {
+            Yii::$app->session->setFlash('error', 'Sadece JPG, JPEG, PNG veya WEBP formatında etiket fotoğrafı yükleyebilirsiniz.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        if ($uploadedFile->size > 10 * 1024 * 1024) {
+            Yii::$app->session->setFlash('error', 'Etiket fotoğrafı boyutu 10 MB sınırını aşamaz.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        $uploadDir = Yii::getAlias('@app/web/uploads/ekipman-etiket');
+        FileHelper::createDirectory($uploadDir);
+
+        $safeId = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string)$model->id);
+        $fileName = $safeId . '_etiket_' . date('Ymd_His') . '.' . $extension;
+        $absolutePath = $uploadDir . DIRECTORY_SEPARATOR . $fileName;
+        $relativePath = 'ekipman-etiket/' . $fileName;
+
+        if (!$uploadedFile->saveAs($absolutePath, false)) {
+            Yii::$app->session->setFlash('error', 'Etiket fotoğrafı kaydedilemedi.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        if (@getimagesize($absolutePath) === false) {
+            @unlink($absolutePath);
+            Yii::$app->session->setFlash('error', 'Yüklenen etiket dosyası geçerli bir görsel değil.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        $dok = new EkipmanDokuman();
+        $dok->ekipman_kodu = (string)$model->id;
+        $dok->dokuman_turu = 'ETİKET FOTOĞRAFI';
+        $dok->dokuman_adi = pathinfo($fileName, PATHINFO_FILENAME);
+        $dok->dosya_yolu = $relativePath;
+        $dok->created_at = date('Y-m-d H:i:s');
+        $dok->updated_at = date('Y-m-d H:i:s');
+        if (!$dok->save(false)) {
+            @unlink($absolutePath);
+            Yii::$app->session->setFlash('error', 'Etiket fotoğrafı bilgisi kaydedilemedi.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        Yii::$app->session->setFlash('success', 'Etiket fotoğrafı yüklendi.');
+        return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+    }
+
+    public function actionEtiketFotoSil($id, $dokumanId)
+    {
+        $model = $this->findModel($id);
+
+        if (Yii::$app->user->isGuest || !in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true)) {
+            throw new ForbiddenHttpException('Bu işlem için yetkiniz yok.');
+        }
+
+        $dok = EkipmanDokuman::findOne([
+            'id' => $dokumanId,
+            'ekipman_kodu' => $model->id,
+            'dokuman_turu' => 'ETİKET FOTOĞRAFI',
+        ]);
+
+        if ($dok === null) {
+            Yii::$app->session->setFlash('info', 'Silinecek etiket fotoğrafı bulunamadı.');
+            return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
+        }
+
+        $relativePath = (string)$dok->dosya_yolu;
+        $dok->delete();
+        $this->deleteEtiketFotoFileIfUnused($relativePath);
+
+        Yii::$app->session->setFlash('success', 'Etiket fotoğrafı kaldırıldı.');
         return $this->redirect(['view', 'id' => $model->id, '#' => 'tanitim-foto']);
     }
 
@@ -599,7 +742,7 @@ public function actionExportPdf()
     public function actionHurdayaAyir($id)
     {
         $model = $this->findModel($id);
-        $model->DURUM = 'HURDA';
+        $model->DURUM = Ekipman::DURUM_HURDA;
 
         if ($model->save(false)) {
             Yii::$app->session->setFlash('success', 'Ekipman hurdaya ayrıldı.');
@@ -610,10 +753,24 @@ public function actionExportPdf()
         return $this->redirect(['view', 'id' => $model->id]);
     }
 
+    public function actionKullanimDisi($id)
+    {
+        $model = $this->findModel($id);
+        $model->DURUM = Ekipman::DURUM_KULLANIM_DISI;
+
+        if ($model->save(false)) {
+            Yii::$app->session->setFlash('success', 'Ekipman kullanım dışı olarak işaretlendi. Planlı bakım ve periyodik kontrol takibi askıya alındı.');
+        } else {
+            Yii::$app->session->setFlash('error', 'Ekipman kullanım dışı yapılamadı.');
+        }
+
+        return $this->redirect(['view', 'id' => $model->id]);
+    }
+
     public function actionAktifeAl($id)
     {
         $model = $this->findModel($id);
-        $model->DURUM = 'AKTIF';
+        $model->DURUM = Ekipman::DURUM_AKTIF;
 
         if ($model->save(false)) {
             Yii::$app->session->setFlash('success', 'Ekipman tekrar aktife alındı.');
@@ -743,6 +900,21 @@ public function actionExportPdf()
             $meta->besleme_kaynagi_id = $kaynak;
             $meta->salter_kodu = ($salterKodu === '' || $salterKodu === null || $salterKodu === '-') ? null : $salterKodu;
             $meta->salter_akim = ($salterAkim === '' || $salterAkim === null || $salterAkim === '-') ? null : $salterAkim;
+            if ($meta->hasAttribute('besleme_grubu_tipi')) {
+                $meta->besleme_grubu_tipi = Ekipman::BESLEME_GRUBU_TEK;
+            }
+            if ($meta->hasAttribute('besleme_girisleri_json')) {
+                $meta->besleme_girisleri_json = $kaynak === null ? null : json_encode([[
+                    'kaynak_id' => $kaynak,
+                    'salter_kodu' => $meta->salter_kodu,
+                    'salter_akim' => $meta->salter_akim,
+                    'hedef_salter_kodu' => null,
+                    'kaynak_giris_no' => null,
+                    'gerilim_seviyesi' => Ekipman::GERILIM_AG,
+                    'rol' => null,
+                    'not' => null,
+                ]], JSON_UNESCAPED_UNICODE);
+            }
             if ($meta->save(false)) {
                 $updated++;
             } else {
@@ -862,7 +1034,7 @@ public function actionExportPdf()
                     } elseif ($attribute === 'IMAL_YILI') {
                         $model->$attribute = $value === '' ? null : (int)$value;
                     } elseif ($attribute === 'DURUM') {
-                        $model->$attribute = $value === '' ? 'AKTIF' : strtoupper($value);
+                        $model->$attribute = $value === '' ? Ekipman::DURUM_AKTIF : Ekipman::normalizeDurum($value);
                     } elseif ($attribute === 'MIKTAR') {
                         $model->$attribute = $value === '' ? null : $value;
                     } else {
@@ -871,7 +1043,7 @@ public function actionExportPdf()
                 }
 
                 if (empty($model->DURUM)) {
-                    $model->DURUM = 'AKTIF';
+                    $model->DURUM = Ekipman::DURUM_AKTIF;
                 }
 
                 if (!empty($model->besleme_kaynagi_id)) {
@@ -942,7 +1114,7 @@ public function actionExportPdf()
             'MIKTAR' => ['miktar', 'adet'],
             'IMAL_YILI' => ['imal yili', 'imal yılı', 'yil', 'yıl'],
             'NOTLAR' => ['notlar', 'not'],
-            'DURUM' => ['durum', 'aktif hurda', 'durum aktif hurda'],
+            'DURUM' => ['durum', 'aktif hurda', 'kullanim disi', 'kullanım dışı', 'durum aktif hurda'],
             'ENLEM' => ['enlem', 'latitude'],
             'BOYLAM' => ['boylam', 'longitude'],
             'TANITIM_FOTO' => ['tanitim fotografi', 'tanıtım fotoğrafı', 'tanitim foto', 'tanıtım foto'],
@@ -1860,6 +2032,26 @@ public function actionSog5Tuketim()
         }
     }
 
+    private function deleteEtiketFotoFileIfUnused(?string $relativePath): void
+    {
+        $relativePath = str_replace('\\', '/', ltrim(trim((string)$relativePath), '/'));
+        if ($relativePath === '' || !str_starts_with($relativePath, 'ekipman-etiket/')) {
+            return;
+        }
+
+        $stillUsed = EkipmanDokuman::find()
+            ->where(['dosya_yolu' => $relativePath])
+            ->exists();
+        if ($stillUsed) {
+            return;
+        }
+
+        $absolutePath = Yii::getAlias('@app/web/uploads/' . $relativePath);
+        if (is_file($absolutePath)) {
+            @unlink($absolutePath);
+        }
+    }
+
     /**
      * Enerji Analizörleri yönetimi
      */
@@ -1906,6 +2098,29 @@ public function actionSog5Tuketim()
             Yii::$app->session->setFlash('success', 'Analizör silindi.');
         }
         return $this->redirect(['ekipman/analizor-index']);
+    }
+
+    private function latestPeriyodikKontrolCondition(string $alias): string
+    {
+        return "NOT EXISTS (
+            SELECT 1
+            FROM periyodik_kontrol pk_newer
+            WHERE BINARY pk_newer.ekipman_id = BINARY {$alias}.ekipman_id
+              AND COALESCE(pk_newer.cihaz_adi, '') = COALESCE({$alias}.cihaz_adi, '')
+              AND (
+                  (pk_newer.gelecek_kontrol_tarihi IS NOT NULL AND ({$alias}.gelecek_kontrol_tarihi IS NULL OR pk_newer.gelecek_kontrol_tarihi > {$alias}.gelecek_kontrol_tarihi))
+                  OR (
+                      pk_newer.gelecek_kontrol_tarihi = {$alias}.gelecek_kontrol_tarihi
+                      AND pk_newer.son_kontrol_tarihi IS NOT NULL
+                      AND ({$alias}.son_kontrol_tarihi IS NULL OR pk_newer.son_kontrol_tarihi > {$alias}.son_kontrol_tarihi)
+                  )
+                  OR (
+                      pk_newer.gelecek_kontrol_tarihi = {$alias}.gelecek_kontrol_tarihi
+                      AND (pk_newer.son_kontrol_tarihi = {$alias}.son_kontrol_tarihi OR (pk_newer.son_kontrol_tarihi IS NULL AND {$alias}.son_kontrol_tarihi IS NULL))
+                      AND pk_newer.id > {$alias}.id
+                  )
+              )
+        )";
     }
 
 }

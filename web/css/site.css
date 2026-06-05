@@ -131,3 +131,332 @@ a.desc:after {
     white-space: nowrap;
 }
 
+.home-kpi-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.home-kpi-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: #64748b;
+}
+
+.home-kpi-danger::before { background: #ef4444; }
+.home-kpi-warning::before { background: #f59e0b; }
+.home-kpi-info::before { background: #38bdf8; }
+.home-kpi-success::before { background: #22c55e; }
+
+.home-kpi-lines {
+    line-height: 1.45;
+}
+
+.home-activity-summary {
+    display: grid;
+    gap: .55rem;
+}
+
+.home-activity-periods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+}
+
+.home-activity-section {
+    padding: .4rem .5rem;
+    border-left: 2px solid rgba(56, 189, 248, 0.55);
+    background: rgba(15, 23, 42, 0.22);
+    border-radius: 8px;
+}
+
+.home-activity-all {
+    border-left-color: rgba(245, 158, 11, 0.75);
+}
+
+.home-activity-title {
+    margin-bottom: .25rem;
+    color: #cbd5e1;
+    font-weight: 700;
+    letter-spacing: .01em;
+}
+
+.home-activity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .45rem;
+    line-height: 1.38;
+}
+
+.home-activity-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .35rem;
+}
+
+.home-activity-metric {
+    min-width: 0;
+    padding: .35rem .4rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.28);
+}
+
+.home-activity-metric span {
+    display: block;
+    color: #94a3b8;
+    font-size: .72rem;
+    line-height: 1.12;
+    white-space: normal;
+}
+
+.home-activity-all .home-activity-row {
+    display: inline-flex;
+    width: 48%;
+    margin-right: 2%;
+}
+
+.home-activity-all .home-activity-title,
+.home-activity-all .home-activity-total {
+    display: flex;
+    width: 100%;
+    margin-right: 0;
+}
+
+.home-activity-row span {
+    color: #94a3b8;
+    min-width: 0;
+}
+
+.home-activity-count {
+    min-width: 2.25rem;
+    margin-left: .2rem;
+    color: #ffc107 !important;
+    font-weight: 700;
+    text-align: right;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+a.home-count-warning,
+.home-count-warning {
+    color: #ffc107 !important;
+    font-weight: 800 !important;
+}
+
+a.home-count-danger,
+.home-count-danger {
+    color: #ef4444 !important;
+    font-weight: 800 !important;
+}
+
+a.home-count-success,
+.home-count-success {
+    color: #22c55e !important;
+    font-weight: 800 !important;
+}
+
+.home-activity-count:hover {
+    color: #ffd65a !important;
+    text-decoration: underline;
+}
+
+.home-activity-total {
+    margin-top: .2rem;
+    padding-top: .35rem;
+    border-top: 1px dashed rgba(148, 163, 184, 0.2);
+}
+
+.home-activity-total span {
+    color: #38bdf8;
+}
+
+.home-activity-total-link {
+    font-size: .9rem;
+}
+
+.home-panel {
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.home-side-stack {
+    display: grid;
+    gap: 1rem;
+    position: sticky;
+    top: 76px;
+}
+
+.home-action-list {
+    display: grid;
+    gap: .42rem;
+}
+
+.home-action-card {
+    overflow: hidden;
+}
+
+.home-action-section-title {
+    margin-bottom: .35rem;
+    color: #cbd5e1;
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.home-action-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .45rem .6rem;
+    color: #f8fafc;
+    text-decoration: none;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.36);
+}
+
+.home-action-item:hover {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.32);
+    background: rgba(30, 41, 59, 0.9);
+}
+
+.home-action-item strong {
+    min-width: 2.2rem;
+    text-align: center;
+    font-size: 1.12rem;
+    line-height: 1;
+}
+
+.home-action-list-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-action-danger strong { color: #f87171; }
+.home-action-warning strong { color: #fbbf24; }
+.home-action-info strong { color: #38bdf8; }
+.home-action-success strong { color: #4ade80; }
+
+.home-mini-metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .55rem 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.home-mini-metric:last-child {
+    border-bottom: 0;
+}
+
+.home-inventory-bar {
+    display: flex;
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #1f2937;
+}
+
+.home-inventory-active { background: #22c55e; }
+.home-inventory-passive { background: #f59e0b; }
+.home-inventory-scrap { background: #ef4444; }
+
+.home-planli-table {
+    margin-bottom: 0;
+}
+
+.home-planli-table > :not(caption) > * > * {
+    padding-top: .55rem;
+    padding-bottom: .55rem;
+    vertical-align: middle;
+}
+
+.home-planli-table .ekipman-tanim-link {
+    color: #f8fafc !important;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.home-planli-table .ekipman-tanim-link:hover {
+    color: #38bdf8 !important;
+    text-decoration: underline;
+}
+
+.home-equipment-cell {
+    max-width: 560px;
+}
+
+.home-planli-action {
+    min-width: 36px;
+}
+
+.home-row-overdue td {
+    background-color: rgba(127, 29, 29, 0.32) !important;
+}
+
+.home-row-today td {
+    background-color: rgba(180, 83, 9, 0.25) !important;
+}
+
+.periyodik-due-bar {
+    position: relative;
+    height: 24px;
+    overflow: hidden;
+    border-radius: 7px;
+    background: #111827;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.periyodik-due-fill {
+    height: 100%;
+    opacity: .72;
+}
+
+.periyodik-due-bar span {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: .78rem;
+    font-weight: 700;
+}
+
+.periyodik-due-danger .periyodik-due-fill { background: #dc2626; }
+.periyodik-due-warning .periyodik-due-fill { background: #a16207; }
+.periyodik-due-success .periyodik-due-fill { background: #16a34a; }
+
+@media (max-width: 1199.98px) {
+    .home-side-stack {
+        position: static;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .home-activity-periods {
+        grid-template-columns: 1fr;
+    }
+
+    .home-activity-all .home-activity-row {
+        display: flex;
+        width: 100%;
+        margin-right: 0;
+    }
+
+    .home-activity-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-planli-table {
+        font-size: .82rem;
+    }
+}
+

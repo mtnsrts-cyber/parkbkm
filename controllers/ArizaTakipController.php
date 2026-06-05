@@ -42,6 +42,9 @@ class ArizaTakipController extends Controller
                             'actions' => ['create'],
                             'allow' => true,
                             'roles' => ['@'],
+                            'matchCallback' => function ($rule, $action) {
+                                return in_array(\Yii::$app->user->identity->role, ['admin','editor']);
+                            }
                         ],
                         [
                             'actions' => ['update', 'delete'],

@@ -30,7 +30,12 @@ class PlanliBakimSearch extends PlanliBakim
      */
     public function search($params)
     {
-        $query = PlanliBakim::find();
+        $query = PlanliBakim::find()
+            ->alias('pb')
+            ->innerJoin(['e' => Ekipman::tableName()], 'e.id = pb.kodu')
+            ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+            ->andWhere("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF') = 'AKTIF'")
+            ->orderBy(['pb.tarihi' => SORT_DESC]);
 
         $dataProvider = new ActiveDataProvider([
             'query' => $query,
@@ -39,11 +44,7 @@ class PlanliBakimSearch extends PlanliBakim
                 'pageSizeParam'   => 'per-page',
                 'pageSizeLimit'   => [1, 500],
             ],
-            'sort' => [
-                'defaultOrder' => [
-                    'tarihi' => SORT_DESC,
-                ],
-            ],
+            'sort' => false,
         ]);
 
         $this->load($params);
@@ -52,21 +53,21 @@ class PlanliBakimSearch extends PlanliBakim
             return $dataProvider;
         }
 
-        $query->andFilterWhere(['like', 'kodu', $this->kodu])
-              ->andFilterWhere(['like', 'tanimi', $this->tanimi])
-              ->andFilterWhere(['like', 'periyodu', $this->periyodu])
-              ->andFilterWhere(['like', 'durumu', $this->durumu]);
+        $query->andFilterWhere(['like', 'pb.kodu', $this->kodu])
+              ->andFilterWhere(['like', 'pb.tanimi', $this->tanimi])
+              ->andFilterWhere(['like', 'pb.periyodu', $this->periyodu])
+              ->andFilterWhere(['like', 'pb.durumu', $this->durumu]);
 
         if (!empty($this->tarihi)) {
-            $query->andFilterWhere(['tarihi' => $this->tarihi]);
+            $query->andFilterWhere(['pb.tarihi' => $this->tarihi]);
         }
 
         if (!empty($this->globalSearch)) {
             $query->andWhere(['or',
-                ['like', 'kodu', $this->globalSearch],
-                ['like', 'tanimi', $this->globalSearch],
-                ['like', 'periyodu', $this->globalSearch],
-                ['like', 'durumu', $this->globalSearch],
+                ['like', 'pb.kodu', $this->globalSearch],
+                ['like', 'pb.tanimi', $this->globalSearch],
+                ['like', 'pb.periyodu', $this->globalSearch],
+                ['like', 'pb.durumu', $this->globalSearch],
             ]);
         }
 

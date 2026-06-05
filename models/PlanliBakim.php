@@ -217,6 +217,11 @@ class PlanliBakim extends ActiveRecord
      */
     public static function getNextDueDatesByPeriodForEkipman($ekipmanId): array
     {
+        $ekipman = Ekipman::findOne((string)$ekipmanId);
+        if ($ekipman !== null && !$ekipman->isAktif()) {
+            return [];
+        }
+
         $rows = self::find()
             ->select(['id', 'tanimi', 'periyodu', 'tarihi', 'durumu'])
             ->where(['kodu' => $ekipmanId])
@@ -313,13 +318,24 @@ class PlanliBakim extends ActiveRecord
     public static function getAllUpcomingNextDueDates(int $limit = 50): array
     {
         $rows = self::find()
-            ->select(['id', 'kodu', 'tanimi', 'periyodu', 'tarihi', 'durumu'])
+            ->alias('pb')
+            ->select([
+                'id' => 'pb.id',
+                'kodu' => 'pb.kodu',
+                'tanimi' => 'pb.tanimi',
+                'periyodu' => 'pb.periyodu',
+                'tarihi' => 'pb.tarihi',
+                'durumu' => 'pb.durumu',
+            ])
+            ->innerJoin(['e' => Ekipman::tableName()], 'e.id = pb.kodu')
+            ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+            ->where("COALESCE(NULLIF(em.DURUM, ''), 'AKTIF') = 'AKTIF'")
             ->orderBy([
-                'kodu' => SORT_ASC,
-                'tanimi' => SORT_ASC,
-                'periyodu' => SORT_ASC,
-                'tarihi' => SORT_DESC,
-                'id' => SORT_DESC,
+                'pb.kodu' => SORT_ASC,
+                'pb.tanimi' => SORT_ASC,
+                'pb.periyodu' => SORT_ASC,
+                'pb.tarihi' => SORT_DESC,
+                'pb.id' => SORT_DESC,
             ])
             ->asArray()
             ->all();

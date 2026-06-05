@@ -11,6 +11,7 @@ use yii\web\NotFoundHttpException;
 use app\models\Ekipman;
 use yii\data\ArrayDataProvider;
 use yii\data\ActiveDataProvider;
+use yii\db\Expression;
 use yii\web\UploadedFile;
 use app\models\LoginForm;
 use app\models\PlanliBakim;
@@ -22,6 +23,15 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 class SiteController extends Controller
 {
+    public function beforeAction($action)
+    {
+        if ($action->id === 'periyodik-rapor-upload') {
+            $this->enableCsrfValidation = false;
+        }
+
+        return parent::beforeAction($action);
+    }
+
     public function behaviors()
     {
         return [
@@ -148,14 +158,15 @@ public function actionMap()
 public function actionIndex()
 {
     $allUpcoming = PlanliBakim::getAllUpcomingNextDueDates(200);
-    $hurdaSet = $this->getHurdaEkipmanSet();
+    $pasifSet = $this->getPasifEkipmanSet();
+    $quickFilter = trim((string)Yii::$app->request->get('quick', ''));
 
     $today = new \DateTime('today');
     $filtered = [];
 
     foreach ($allUpcoming as $item) {
-        // Hurdaya ayrılmış ekipmanları ana sayfa listesinden çıkar
-        if (isset($hurdaSet[(string)$item['ekipman_id']])) {
+        // Hurda veya kullanım dışı ekipmanları ana sayfa listesinden çıkar.
+        if (isset($pasifSet[(string)$item['ekipman_id']])) {
             continue;
         }
 
@@ -165,7 +176,7 @@ public function actionIndex()
             continue;
         }
 
-        // Gecikmiş veya önümüzdeki 10 gün içinde olanlar
+        // Gecikmiş, bugün son günü olan veya önümüzdeki 10 gün içinde olanlar
         if ($sonrakiTarih <= $today) {
             $filtered[] = $item;
         } else {
@@ -176,8 +187,46 @@ public function actionIndex()
         }
     }
 
+    $displayItems = $filtered;
+    if ($quickFilter === 'planli-gecikmis') {
+        $displayItems = array_values(array_filter($filtered, function (array $item) use ($today): bool {
+            try {
+                return (new \DateTime($item['sonraki_tarih'])) < $today;
+            } catch (\Exception $e) {
+                return false;
+            }
+        }));
+    } elseif ($quickFilter === 'planli-son-gun') {
+        $displayItems = array_values(array_filter($filtered, function (array $item) use ($today): bool {
+            try {
+                return (new \DateTime($item['sonraki_tarih'])) == $today;
+            } catch (\Exception $e) {
+                return false;
+            }
+        }));
+    } elseif ($quickFilter === 'planli-yarin') {
+        $tomorrow = (clone $today)->modify('+1 day');
+        $displayItems = array_values(array_filter($filtered, function (array $item) use ($tomorrow): bool {
+            try {
+                return (new \DateTime($item['sonraki_tarih']))->format('Y-m-d') === $tomorrow->format('Y-m-d');
+            } catch (\Exception $e) {
+                return false;
+            }
+        }));
+    } elseif ($quickFilter === 'planli-7-gun') {
+        $weekEnd = (clone $today)->modify('+7 days');
+        $displayItems = array_values(array_filter($filtered, function (array $item) use ($today, $weekEnd): bool {
+            try {
+                $sonrakiTarih = new \DateTime($item['sonraki_tarih']);
+                return $sonrakiTarih > $today && $sonrakiTarih <= $weekEnd;
+            } catch (\Exception $e) {
+                return false;
+            }
+        }));
+    }
+
     $dataProvider = new ArrayDataProvider([
-        'allModels' => $filtered,
+        'allModels' => $displayItems,
         'pagination' => false,
     ]);
     $dataProvider->sort = false;
@@ -185,6 +234,7 @@ public function actionIndex()
     return $this->render('index', [
         'dataProvider' => $dataProvider,
         'summary' => $this->buildSummaryMetrics($filtered, $today),
+        'quickFilter' => $quickFilter,
     ]);
 }
 
@@ -195,13 +245,13 @@ public function actionKpi()
     $periyodikGecikmisLimitStr = (clone $today)->modify('-30 days')->format('Y-m-d');
     $plus30 = (clone $today)->modify('+30 days');
     $plus90Str = (clone $today)->modify('+90 days')->format('Y-m-d');
-    $hurdaSet = $this->getHurdaEkipmanSet();
+    $pasifSet = $this->getPasifEkipmanSet();
 
     $allUpcoming = PlanliBakim::getAllUpcomingNextDueDates(1000);
     $homeWindow = [];
 
     foreach ($allUpcoming as $item) {
-        if (isset($hurdaSet[(string)$item['ekipman_id']])) {
+        if (isset($pasifSet[(string)$item['ekipman_id']])) {
             continue;
         }
 
@@ -230,16 +280,20 @@ public function actionKpi()
         ->all();
 
     $planliPeriyotDagilim = PlanliBakim::find()
-        ->select(['periyodu', 'adet' => 'COUNT(*)'])
-        ->where(['<>', 'durumu', PlanliBakim::DURUM_OTELEME])
-        ->groupBy('periyodu')
+        ->alias('pb')
+        ->select(['periyodu' => 'pb.periyodu', 'adet' => 'COUNT(*)'])
+        ->innerJoin(['e' => Ekipman::tableName()], 'e.id = pb.kodu')
+        ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+        ->where(['<>', 'pb.durumu', PlanliBakim::DURUM_OTELEME])
+        ->andWhere($this->activeEkipmanCondition('em'))
+        ->groupBy('pb.periyodu')
         ->orderBy(['adet' => SORT_DESC])
         ->asArray()
         ->all();
 
     $planliPeriyotCounter = [];
     foreach ($allUpcoming as $item) {
-        if (isset($hurdaSet[(string)$item['ekipman_id']])) {
+        if (isset($pasifSet[(string)$item['ekipman_id']])) {
             continue;
         }
 
@@ -275,20 +329,28 @@ public function actionKpi()
 
     $minus90Str = (clone $today)->modify('-90 days')->format('Y-m-d');
     $planliDurumDagilim90 = PlanliBakim::find()
-        ->select(['durumu', 'adet' => 'COUNT(*)'])
-        ->where(['>=', 'tarihi', $minus90Str])
-        ->andWhere(['<=', 'tarihi', $todayStr])
-        ->groupBy('durumu')
+        ->alias('pb')
+        ->select(['durumu' => 'pb.durumu', 'adet' => 'COUNT(*)'])
+        ->innerJoin(['e' => Ekipman::tableName()], 'e.id = pb.kodu')
+        ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+        ->where(['>=', 'pb.tarihi', $minus90Str])
+        ->andWhere(['<=', 'pb.tarihi', $todayStr])
+        ->andWhere($this->activeEkipmanCondition('em'))
+        ->groupBy('pb.durumu')
         ->orderBy(['adet' => SORT_DESC])
         ->asArray()
         ->all();
 
     $periyodikGecikmisAdet = (int)PeriyodikKontrol::find()
-        ->where(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
+        ->alias('pk')
+        ->where(['<', 'pk.gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
+        ->andWhere($this->currentPeriyodikKontrolCondition('pk'))
         ->count();
 
     $periyodikYaklasan90Adet = (int)PeriyodikKontrol::find()
-        ->where(['between', 'gelecek_kontrol_tarihi', $todayStr, $plus90Str])
+        ->alias('pk')
+        ->where(['between', 'pk.gelecek_kontrol_tarihi', $todayStr, $plus90Str])
+        ->andWhere($this->currentPeriyodikKontrolCondition('pk'))
         ->count();
 
     $bakimTakipDagilim = BakimTakip::find()
@@ -315,29 +377,48 @@ public function actionKpi()
 public function actionPeriyodikKontroller()
 {
     $query = PeriyodikKontrol::find()
-        ->orderBy(['gelecek_kontrol_tarihi' => SORT_ASC, 'ekipman_id' => SORT_ASC]);
+        ->alias('pk')
+        ->select([
+            'pk.*',
+            'is_eski' => new Expression('CASE WHEN ' . $this->latestPeriyodikKontrolCondition('pk') . ' THEN 0 ELSE 1 END'),
+        ])
+        ->innerJoin(['e' => Ekipman::tableName()], 'BINARY e.id = BINARY pk.ekipman_id')
+        ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+        ->andWhere($this->activeEkipmanCondition('em'))
+        ->orderBy(['pk.gelecek_kontrol_tarihi' => SORT_ASC, 'pk.ekipman_id' => SORT_ASC]);
 
     $searchTerm = trim((string)Yii::$app->request->get('q', ''));
     $quickFilter = trim((string)Yii::$app->request->get('quick', ''));
+    $scope = trim((string)Yii::$app->request->get('scope', 'active'));
+    if (!in_array($scope, ['active', 'all', 'old'], true)) {
+        $scope = 'active';
+    }
     $todayStr = date('Y-m-d');
     $periyodikGecikmisLimitStr = date('Y-m-d', strtotime('-30 days'));
     $plus30Str = date('Y-m-d', strtotime('+30 days'));
     $plus90Str = date('Y-m-d', strtotime('+90 days'));
 
     if ($quickFilter === 'gecikmis') {
-        $query->andWhere(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr]);
+        $query->andWhere(['<', 'pk.gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
+            ->andWhere($this->currentPeriyodikKontrolCondition('pk'));
     } elseif ($quickFilter === 'yaklasan-30') {
-        $query->andWhere(['between', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str]);
+        $query->andWhere(['between', 'pk.gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str])
+            ->andWhere($this->currentPeriyodikKontrolCondition('pk'));
     } elseif ($quickFilter === 'yaklasan-90') {
-        $query->andWhere(['between', 'gelecek_kontrol_tarihi', $todayStr, $plus90Str]);
+        $query->andWhere(['between', 'pk.gelecek_kontrol_tarihi', $todayStr, $plus90Str])
+            ->andWhere($this->currentPeriyodikKontrolCondition('pk'));
+    } elseif ($scope === 'active') {
+        $query->andWhere($this->latestPeriyodikKontrolCondition('pk'));
+    } elseif ($scope === 'old') {
+        $query->andWhere('NOT (' . $this->latestPeriyodikKontrolCondition('pk') . ')');
     }
 
     if ($searchTerm !== '') {
         $query->andFilterWhere(['or',
-            ['like', 'ekipman_id', $searchTerm],
-            ['like', 'cihaz_adi', $searchTerm],
-            ['like', 'bulundugu_yer', $searchTerm],
-            ['like', 'rapor_no', $searchTerm],
+            ['like', 'pk.ekipman_id', $searchTerm],
+            ['like', 'pk.cihaz_adi', $searchTerm],
+            ['like', 'pk.bulundugu_yer', $searchTerm],
+            ['like', 'pk.rapor_no', $searchTerm],
         ]);
     }
 
@@ -355,6 +436,7 @@ public function actionPeriyodikKontroller()
         'dataProvider' => $dataProvider,
         'searchTerm' => $searchTerm,
         'quickFilter' => $quickFilter,
+        'scope' => $scope,
     ]);
 }
 
@@ -488,9 +570,16 @@ public function actionPeriyodikKontrolImport()
 
 public function actionPeriyodikRaporUpload()
 {
+    $contentLength = (int)(Yii::$app->request->headers->get('Content-Length') ?: 0);
+    $postMaxSize = $this->phpSizeToBytes((string)ini_get('post_max_size'));
+    if ($postMaxSize > 0 && $contentLength > $postMaxSize) {
+        Yii::$app->session->setFlash('error', 'Yüklenen dosyaların toplam boyutu sunucu limitini aşıyor. Limit: ' . ini_get('post_max_size') . '. Daha az dosya seçerek tekrar deneyin.');
+        return $this->redirect(['periyodik-kontroller']);
+    }
+
     $files = UploadedFile::getInstancesByName('periyodik_raporlar');
     if (empty($files)) {
-        Yii::$app->session->setFlash('error', 'Lütfen en az bir PDF dosyası seçiniz.');
+        Yii::$app->session->setFlash('error', 'Dosya alınamadı. Sunucu limitlerini kontrol edin: post_max_size=' . ini_get('post_max_size') . ', upload_max_filesize=' . ini_get('upload_max_filesize') . ', max_file_uploads=' . ini_get('max_file_uploads') . '.');
         return $this->redirect(['periyodik-kontroller']);
     }
 
@@ -545,6 +634,28 @@ public function actionPeriyodikRaporUpload()
     return $this->redirect(['periyodik-kontroller']);
 }
 
+private function phpSizeToBytes(string $value): int
+{
+    $value = trim($value);
+    if ($value === '') {
+        return 0;
+    }
+
+    $unit = strtolower(substr($value, -1));
+    $bytes = (int)$value;
+    if ($unit === 'g') {
+        return $bytes * 1024 * 1024 * 1024;
+    }
+    if ($unit === 'm') {
+        return $bytes * 1024 * 1024;
+    }
+    if ($unit === 'k') {
+        return $bytes * 1024;
+    }
+
+    return $bytes;
+}
+
 public function actionPeriyodikKontrolUpdate($id, $return = null)
 {
     $model = $this->findPeriyodikKontrolModel((int)$id);
@@ -585,6 +696,7 @@ public function actionTopluBakimIsle()
     $request = Yii::$app->request;
     $selectedIds = array_filter((array)$request->post('selection', []));
     $topluTarih = trim((string)$request->post('toplu_tarih', ''));
+    $bakimErtele = (int)$request->post('bakim_ertele', 0) === 1;
     $bakimTakipEkle = (int)$request->post('bakim_takip_ekle', 0) === 1;
     $bakimTakipKayitTuru = trim((string)$request->post('bakim_takip_kayit_turu', 'grup'));
     $bakimSuresiSaatRaw = trim((string)$request->post('bakim_suresi_saat', ''));
@@ -609,7 +721,7 @@ public function actionTopluBakimIsle()
         return $this->redirect(['index']);
     }
 
-    if ($bakimTakipEkle) {
+    if ($bakimTakipEkle && !$bakimErtele) {
         if (!in_array($bakimTakipKayitTuru, ['ayri', 'grup'], true)) {
             $bakimTakipKayitTuru = 'grup';
         }
@@ -646,6 +758,9 @@ public function actionTopluBakimIsle()
             $yeni->tanimi = $kaynak->tanimi;
             $yeni->periyodu = $kaynak->periyodu;
             $yeni->tarihi = $topluTarih;
+            if ($bakimErtele) {
+                $yeni->durumu = PlanliBakim::DURUM_OTELEME;
+            }
 
             if (!$yeni->save()) {
                 $hata = implode(' | ', array_map(function ($errors) {
@@ -660,7 +775,7 @@ public function actionTopluBakimIsle()
             $grupEkipmanIds[] = (string)$kaynak->kodu;
             $grupPeriyotlar[] = (string)$kaynak->periyodu;
 
-            if ($bakimTakipEkle && $bakimTakipKayitTuru !== 'grup') {
+            if ($bakimTakipEkle && !$bakimErtele && $bakimTakipKayitTuru !== 'grup') {
                 $bakimTakip = new BakimTakip();
                 $bakimTakip->BAKIM_GENEL = 'BAKIM';
                 $bakimTakip->PERIYODIK_PLANLI = $this->normalizePlanliPeriyotForBakim($kaynak->periyodu);
@@ -699,7 +814,7 @@ public function actionTopluBakimIsle()
             }
         }
 
-        if ($bakimTakipEkle && $bakimTakipKayitTuru === 'grup') {
+        if ($bakimTakipEkle && !$bakimErtele && $bakimTakipKayitTuru === 'grup') {
             $groupBakimTakip = new BakimTakip();
             $groupBakimTakip->BAKIM_GENEL = 'BAKIM';
             $groupBakimTakip->PERIYODIK_PLANLI = $this->buildGroupPlanliPeriyot($grupPeriyotlar);
@@ -737,8 +852,8 @@ public function actionTopluBakimIsle()
         }
 
         $transaction->commit();
-        $mesaj = $olusan . ' kayıt için bakım işlemi tamamlandı.';
-        if ($bakimTakipEkle) {
+        $mesaj = $olusan . ' kayıt için ' . ($bakimErtele ? 'bakım öteleme işlemi' : 'bakım işlemi') . ' tamamlandı.';
+        if ($bakimTakipEkle && !$bakimErtele) {
             if ($bakimTakipKayitTuru === 'grup') {
                 $mesaj .= ' Bakım Takip altında 1 grup kaydı oluşturuldu.';
             } else {
@@ -790,7 +905,6 @@ private function buildPeriyodikColumnMap(array $headerRow): array
     $aliases = [
         'ekipman_id' => ['ekipman kodu', 'ekipman id', 'kodu', 'kod'],
         'cihaz_adi' => ['cihaz adi', 'cihaz adı', 'device name', 'malzemenin tanimi', 'malzemenin tanımı'],
-        'simkal_kodu' => ['simkal kodu', 'simkal kodu seri no', 'seri no', 'seri numarasi', 'seri numarası'],
         'rapor_no' => ['rapor no', 'rapor numarasi', 'rapor numarası'],
         'bulundugu_yer' => ['bulundugu yer', 'bulunduğu yer', 'location', 'yer'],
         'adet' => ['adet', 'pcs'],
@@ -979,16 +1093,21 @@ private function buildGroupYerLabel(array $ekipmanIds): string
     return 'TOPLU BAKIM';
 }
 
-private function getHurdaEkipmanSet(): array
+private function getPasifEkipmanSet(): array
 {
-    $hurdaIds = Ekipman::find()
+    $pasifIds = Ekipman::find()
         ->alias('e')
         ->select(['e.id'])
         ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
-        ->where("UPPER(COALESCE(em.DURUM, 'AKTIF')) = 'HURDA'")
+        ->where("UPPER(COALESCE(em.DURUM, 'AKTIF')) IN ('HURDA', 'KULLANIM_DISI')")
         ->column();
 
-    return array_fill_keys(array_map('strval', $hurdaIds), true);
+    return array_fill_keys(array_map('strval', $pasifIds), true);
+}
+
+private function activeEkipmanCondition(string $metaAlias): string
+{
+    return "UPPER(COALESCE(NULLIF({$metaAlias}.DURUM, ''), 'AKTIF')) = 'AKTIF'";
 }
 
 private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterface $today): array
@@ -1000,12 +1119,30 @@ private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterfac
     $monthEnd = (new \DateTime('last day of this month'))->format('Y-m-d');
 
     $toplamEkipman = (int)Ekipman::find()->count();
-    $hurdaEkipman = (int)count($this->getHurdaEkipmanSet());
-    $aktifEkipman = max(0, $toplamEkipman - $hurdaEkipman);
+    $hurdaEkipman = (int)Ekipman::find()
+        ->alias('e')
+        ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+        ->where("UPPER(COALESCE(NULLIF(em.DURUM, ''), 'AKTIF')) = 'HURDA'")
+        ->count();
+    $kullanimDisiEkipman = (int)Ekipman::find()
+        ->alias('e')
+        ->leftJoin(['em' => 'ekipman_meta'], 'em.ekipman_id = e.id')
+        ->where("UPPER(COALESCE(NULLIF(em.DURUM, ''), 'AKTIF')) = 'KULLANIM_DISI'")
+        ->count();
+    $aktifEkipman = max(0, $toplamEkipman - $hurdaEkipman - $kullanimDisiEkipman);
 
     $toplamAriza = (int)ArizaTakip::find()->count();
     $acikAriza = (int)ArizaTakip::find()
         ->where(['or', ['ARIZANIN_GIDERILDIGI_TARIH' => null], ['ARIZANIN_GIDERILDIGI_TARIH' => '']])
+        ->count();
+    $arizaFaal = (int)ArizaTakip::find()
+        ->where(['ARIZANIN_SON_DURUMU' => 'FAAL'])
+        ->count();
+    $arizaArizaliFaal = (int)ArizaTakip::find()
+        ->where(['ARIZANIN_SON_DURUMU' => 'ARIZALI_FAAL'])
+        ->count();
+    $arizaGayriFaal = (int)ArizaTakip::find()
+        ->where(['ARIZANIN_SON_DURUMU' => 'GAYRI_FAAL'])
         ->count();
     $buAyAriza = (int)ArizaTakip::find()
         ->where(['between', 'ARIZA_TARIHI', $monthStart, $monthEnd])
@@ -1015,6 +1152,7 @@ private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterfac
     $buAyBakim = (int)BakimTakip::find()
         ->where(['between', 'TARIH', $monthStart, $monthEnd])
         ->count();
+    $bakimFaaliyet = $this->buildBakimFaaliyetSummary($monthStart, $monthEnd, $todayStr);
 
     $toplamMaliyet = (float)(ArizaTakip::find()->sum('MALIYET_TL') ?: 0);
     $buAyMaliyet = (float)(ArizaTakip::find()
@@ -1022,41 +1160,165 @@ private function buildSummaryMetrics(array $homeUpcomingItems, \DateTimeInterfac
         ->sum('MALIYET_TL') ?: 0);
 
     $planliGecikmis = 0;
+    $planliSonGun = 0;
     foreach ($homeUpcomingItems as $item) {
         try {
-            if ((new \DateTime($item['sonraki_tarih'])) <= $today) {
+            $sonrakiTarih = new \DateTime($item['sonraki_tarih']);
+            if ($sonrakiTarih < $today) {
                 $planliGecikmis++;
+            } elseif ($sonrakiTarih == $today) {
+                $planliSonGun++;
             }
         } catch (\Exception $e) {
             continue;
         }
     }
 
-    $toplamPeriyodik = (int)PeriyodikKontrol::find()->count();
+    $toplamPeriyodik = (int)PeriyodikKontrol::find()
+        ->alias('pk')
+        ->andWhere($this->currentPeriyodikKontrolCondition('pk'))
+        ->count();
     $periyodikGecikmis = (int)PeriyodikKontrol::find()
-        ->where(['<', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
+        ->alias('pk')
+        ->where(['<', 'pk.gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr])
+        ->andWhere($this->currentPeriyodikKontrolCondition('pk'))
         ->count();
     $periyodikYaklasan = (int)PeriyodikKontrol::find()
-        ->where(['between', 'gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str])
+        ->alias('pk')
+        ->where(['between', 'pk.gelecek_kontrol_tarihi', $periyodikGecikmisLimitStr, $plus30Str])
+        ->andWhere($this->currentPeriyodikKontrolCondition('pk'))
         ->count();
 
     return [
         'toplamEkipman' => $toplamEkipman,
         'aktifEkipman' => $aktifEkipman,
         'hurdaEkipman' => $hurdaEkipman,
+        'kullanimDisiEkipman' => $kullanimDisiEkipman,
         'toplamAriza' => $toplamAriza,
         'acikAriza' => $acikAriza,
+        'arizaFaal' => $arizaFaal,
+        'arizaArizaliFaal' => $arizaArizaliFaal,
+        'arizaGayriFaal' => $arizaGayriFaal,
         'buAyAriza' => $buAyAriza,
         'toplamBakim' => $toplamBakim,
         'buAyBakim' => $buAyBakim,
+        'bakimFaaliyet' => $bakimFaaliyet,
         'planliYaklasan10' => count($homeUpcomingItems),
         'planliGecikmis' => $planliGecikmis,
+        'planliSonGun' => $planliSonGun,
         'toplamPeriyodik' => $toplamPeriyodik,
         'periyodikGecikmis' => $periyodikGecikmis,
         'periyodikYaklasan30' => $periyodikYaklasan,
         'toplamMaliyet' => $toplamMaliyet,
         'buAyMaliyet' => $buAyMaliyet,
     ];
+}
+
+private function buildBakimFaaliyetSummary(string $monthStart, string $monthEnd, string $todayStr): array
+{
+    $yearStart = (new \DateTime($todayStr))->modify('first day of January this year')->format('Y-m-d');
+    $yearEnd = (new \DateTime($todayStr))->modify('last day of December this year')->format('Y-m-d');
+
+    return [
+        'month' => $this->buildBakimFaaliyetRange($monthStart, $monthEnd, false),
+        'year' => $this->buildBakimFaaliyetRange($yearStart, $yearEnd, false),
+        'all' => $this->buildBakimFaaliyetRange(null, null, true),
+    ];
+}
+
+private function buildBakimFaaliyetRange(?string $startDate, ?string $endDate, bool $withPeriods): array
+{
+    $linkedBakimIds = BakimTakipPlanli::find()->select('bakim_id');
+
+    $generalQuery = BakimTakip::find()
+        ->where(['not in', 'id', $linkedBakimIds])
+        ->andWhere([
+            'or',
+            ['PERIYODIK_PLANLI' => null],
+            ['PERIYODIK_PLANLI' => ''],
+            ['not like', 'PERIYODIK_PLANLI', 'PLANLI'],
+        ]);
+
+    $planliQuery = BakimTakip::find()
+        ->alias('bt')
+        ->innerJoin(['btp' => BakimTakipPlanli::tableName()], 'btp.bakim_id = bt.id')
+        ->innerJoin(['pb' => PlanliBakim::tableName()], 'pb.id = btp.planli_id');
+
+    if ($startDate !== null && $endDate !== null) {
+        $generalQuery->andWhere(['between', 'TARIH', $startDate, $endDate]);
+        $planliQuery->andWhere(['between', 'bt.TARIH', $startDate, $endDate]);
+    }
+
+    $general = (int)$generalQuery->count();
+    $planli = (int)(clone $planliQuery)->count('DISTINCT bt.id');
+    $periods = [];
+
+    if ($withPeriods) {
+        $periodRows = (clone $planliQuery)
+            ->select(['periyodu' => 'pb.periyodu', 'adet' => 'COUNT(DISTINCT bt.id)'])
+            ->groupBy('pb.periyodu')
+            ->orderBy(['pb.periyodu' => SORT_ASC])
+            ->asArray()
+            ->all();
+
+        foreach ($periodRows as $row) {
+            $label = trim(str_replace('Periyodik: ', '', (string)($row['periyodu'] ?? '')));
+            if ($label === '') {
+                $label = 'Periyot belirtilmemiş';
+            }
+            $periods[] = [
+                'label' => $label,
+                'period' => (string)($row['periyodu'] ?? ''),
+                'count' => (int)($row['adet'] ?? 0),
+            ];
+        }
+    }
+
+    return [
+        'general' => $general,
+        'planli' => $planli,
+        'periods' => $periods,
+        'total' => $general + $planli,
+    ];
+}
+
+private function currentPeriyodikKontrolCondition(string $alias): string
+{
+    return $this->activePeriyodikKontrolEkipmanCondition($alias) . ' AND ' . $this->latestPeriyodikKontrolCondition($alias);
+}
+
+private function activePeriyodikKontrolEkipmanCondition(string $alias): string
+{
+    return "EXISTS (
+        SELECT 1
+        FROM ekipman e_current
+        LEFT JOIN ekipman_meta em_current ON em_current.ekipman_id = e_current.id
+        WHERE BINARY e_current.id = BINARY {$alias}.ekipman_id
+          AND UPPER(COALESCE(NULLIF(em_current.DURUM, ''), 'AKTIF')) = 'AKTIF'
+    )";
+}
+
+private function latestPeriyodikKontrolCondition(string $alias): string
+{
+    return "NOT EXISTS (
+        SELECT 1
+        FROM periyodik_kontrol pk_newer
+        WHERE BINARY pk_newer.ekipman_id = BINARY {$alias}.ekipman_id
+          AND COALESCE(pk_newer.cihaz_adi, '') = COALESCE({$alias}.cihaz_adi, '')
+          AND (
+              (pk_newer.gelecek_kontrol_tarihi IS NOT NULL AND ({$alias}.gelecek_kontrol_tarihi IS NULL OR pk_newer.gelecek_kontrol_tarihi > {$alias}.gelecek_kontrol_tarihi))
+              OR (
+                  pk_newer.gelecek_kontrol_tarihi = {$alias}.gelecek_kontrol_tarihi
+                  AND pk_newer.son_kontrol_tarihi IS NOT NULL
+                  AND ({$alias}.son_kontrol_tarihi IS NULL OR pk_newer.son_kontrol_tarihi > {$alias}.son_kontrol_tarihi)
+              )
+              OR (
+                  pk_newer.gelecek_kontrol_tarihi = {$alias}.gelecek_kontrol_tarihi
+                  AND (pk_newer.son_kontrol_tarihi = {$alias}.son_kontrol_tarihi OR (pk_newer.son_kontrol_tarihi IS NULL AND {$alias}.son_kontrol_tarihi IS NULL))
+                  AND pk_newer.id > {$alias}.id
+              )
+          )
+    )";
 }
 
 
