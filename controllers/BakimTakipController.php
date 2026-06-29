@@ -383,11 +383,16 @@ class BakimTakipController extends Controller
     public function actionUpdate($id)
     {
         $model = $this->findModel($id);
+        $this->hydrateBakimFromGeneratedPlanliLinks($model);
+        $oldEkipmanIds = array_values(array_filter((array)$model->ekipmanIds, static fn($value): bool => $value !== '' && $value !== null));
+        $oldPeriyot = (string)$model->PERIYODIK_PLANLI;
+        $oldTarih = (string)$model->TARIH;
 
         if ($this->request->isPost && $model->load($this->request->post())) {
             $transaction = Yii::$app->db->beginTransaction();
             try {
                 if ($model->save()) {
+                    $this->attachLegacyGeneratedPlanliBakimLinks($model, $oldEkipmanIds, $oldPeriyot, $oldTarih);
                     $this->syncGeneratedPlanliBakimKayitlari($model);
                     $transaction->commit();
                     return $this->redirect(['view', 'id' => $model->id]);
@@ -452,10 +457,144 @@ class BakimTakipController extends Controller
         return $this->redirect(['index']);
     }
 
+    private function attachLegacyGeneratedPlanliBakimLinks(BakimTakip $bakim, array $oldEkipmanIds, string $oldPeriyot, string $oldTarih): void
+    {
+        $currentPeriyot = $this->normalizeBakimPeriyoduToPlanli((string)$bakim->PERIYODIK_PLANLI);
+        if ($currentPeriyot === null || empty($bakim->TARIH)) {
+            return;
+        }
+
+        $currentEkipmanIds = array_values(array_unique(array_filter((array)$bakim->ekipmanIds, static fn($id): bool => $id !== '' && $id !== null)));
+        if (empty($currentEkipmanIds)) {
+            return;
+        }
+
+        $oldPlanliPeriyot = $this->normalizeBakimPeriyoduToPlanli($oldPeriyot);
+        $linkedPlanliIds = BakimTakipPlanli::find()
+            ->select('planli_id')
+            ->where(['bakim_id' => (int)$bakim->id, 'link_type' => BakimTakipPlanli::TYPE_GENERATED])
+            ->column();
+
+        $linkedKodu = [];
+        if (!empty($linkedPlanliIds)) {
+            $linkedKodu = PlanliBakim::find()
+                ->select('kodu')
+                ->where(['id' => $linkedPlanliIds])
+                ->column();
+            $linkedKodu = array_fill_keys(array_map('strval', $linkedKodu), true);
+        }
+
+        foreach ($currentEkipmanIds as $ekipmanId) {
+            $ekipmanId = (string)$ekipmanId;
+            if (isset($linkedKodu[$ekipmanId])) {
+                continue;
+            }
+
+            $candidate = null;
+            if ($oldPlanliPeriyot !== null && $oldTarih !== '' && in_array($ekipmanId, array_map('strval', $oldEkipmanIds), true)) {
+                $candidate = PlanliBakim::find()
+                    ->where([
+                        'kodu' => $ekipmanId,
+                        'periyodu' => $oldPlanliPeriyot,
+                        'tarihi' => $oldTarih,
+                    ])
+                    ->andWhere(['<>', 'durumu', PlanliBakim::DURUM_OTELEME])
+                    ->orderBy(['id' => SORT_DESC])
+                    ->one();
+            }
+
+            if ($candidate === null) {
+                $maxTarih = date('Y-m-d', strtotime((string)$bakim->TARIH . ' +7 days'));
+                $candidate = PlanliBakim::find()
+                    ->where([
+                        'kodu' => $ekipmanId,
+                        'periyodu' => $currentPeriyot,
+                        'durumu' => 'Plan sonrası',
+                    ])
+                    ->andWhere(['>', 'tarihi', (string)$bakim->TARIH])
+                    ->andWhere(['<=', 'tarihi', $maxTarih])
+                    ->orderBy(['tarihi' => SORT_ASC, 'id' => SORT_DESC])
+                    ->one();
+            }
+
+            if ($candidate === null) {
+                continue;
+            }
+
+            $alreadyLinked = BakimTakipPlanli::find()
+                ->where(['bakim_id' => (int)$bakim->id, 'planli_id' => (int)$candidate->id])
+                ->exists();
+            if ($alreadyLinked) {
+                continue;
+            }
+
+            $link = new BakimTakipPlanli();
+            $link->bakim_id = (int)$bakim->id;
+            $link->planli_id = (int)$candidate->id;
+            $link->link_type = BakimTakipPlanli::TYPE_GENERATED;
+            $link->created_at = date('Y-m-d H:i:s');
+
+            if (!$link->save()) {
+                $hata = implode(' | ', array_map(static function ($errors) {
+                    return implode(', ', $errors);
+                }, $link->getErrors()));
+                throw new \RuntimeException('Eski planlı bakım bağlantısı onarılamadı (ekipman: ' . $ekipmanId . '): ' . $hata);
+            }
+        }
+    }
+
+    private function hydrateBakimFromGeneratedPlanliLinks(BakimTakip $bakim): void
+    {
+        $planliRows = PlanliBakim::find()
+            ->alias('pb')
+            ->innerJoin(['btp' => BakimTakipPlanli::tableName()], 'btp.planli_id = pb.id')
+            ->where([
+                'btp.bakim_id' => (int)$bakim->id,
+                'btp.link_type' => BakimTakipPlanli::TYPE_GENERATED,
+            ])
+            ->orderBy(['pb.kodu' => SORT_ASC])
+            ->all();
+
+        if (empty($planliRows)) {
+            return;
+        }
+
+        if (empty(array_filter((array)$bakim->ekipmanIds, static fn($id): bool => $id !== '' && $id !== null))) {
+            $bakim->ekipmanIds = array_values(array_unique(array_map(static function (PlanliBakim $planli): string {
+                return (string)$planli->kodu;
+            }, $planliRows)));
+        }
+
+        if (trim((string)$bakim->PERIYODIK_PLANLI) === '') {
+            $periyotlar = array_values(array_unique(array_filter(array_map(static function (PlanliBakim $planli): string {
+                return trim((string)$planli->periyodu);
+            }, $planliRows))));
+
+            if (count($periyotlar) === 1) {
+                $bakim->PERIYODIK_PLANLI = $this->normalizePlanliPeriyotForBakimForm($periyotlar[0]);
+            } elseif (count($periyotlar) > 1) {
+                $bakim->PERIYODIK_PLANLI = 'PLANLI TOPLU BAKIM';
+            }
+        }
+    }
+
+    private function normalizePlanliPeriyotForBakimForm(string $periyot): string
+    {
+        $periyot = trim($periyot);
+        if ($periyot === '') {
+            return '';
+        }
+
+        return preg_replace('/^Periyodik\s*:/iu', 'PLANLI:', $periyot);
+    }
+
     private function syncGeneratedPlanliBakimKayitlari(BakimTakip $bakim): void
     {
         $periyot = $this->normalizeBakimPeriyoduToPlanli((string)$bakim->PERIYODIK_PLANLI);
         if ($periyot === null || empty($bakim->TARIH)) {
+            if (!empty($bakim->TARIH)) {
+                $this->syncLinkedGeneratedPlanliDatesOnly($bakim);
+            }
             return;
         }
 
@@ -564,6 +703,29 @@ class BakimTakipController extends Controller
                     return implode(', ', $errors);
                 }, $planli->getErrors()));
                 throw new \RuntimeException('Planlı bakım güncellenemedi (ID: ' . (int)$planli->id . '): ' . $hata);
+            }
+        }
+    }
+
+    private function syncLinkedGeneratedPlanliDatesOnly(BakimTakip $bakim): void
+    {
+        $planliRows = PlanliBakim::find()
+            ->alias('pb')
+            ->innerJoin(['btp' => BakimTakipPlanli::tableName()], 'btp.planli_id = pb.id')
+            ->where([
+                'btp.bakim_id' => (int)$bakim->id,
+                'btp.link_type' => BakimTakipPlanli::TYPE_GENERATED,
+            ])
+            ->andWhere(['<>', 'pb.durumu', PlanliBakim::DURUM_OTELEME])
+            ->all();
+
+        foreach ($planliRows as $planli) {
+            $planli->tarihi = $bakim->TARIH;
+            if (!$planli->save()) {
+                $hata = implode(' | ', array_map(static function ($errors) {
+                    return implode(', ', $errors);
+                }, $planli->getErrors()));
+                throw new \RuntimeException('Planlı bakım tarihi güncellenemedi (ID: ' . (int)$planli->id . '): ' . $hata);
             }
         }
     }

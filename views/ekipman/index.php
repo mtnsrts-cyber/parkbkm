@@ -22,6 +22,9 @@ $this->title = 'Ekipman Listesi';
     margin-right: 12px;
     cursor: pointer;
 }
+.ekipman-action-mobile {
+    display: none;
+}
 #live-search {
     padding: 10px;
     font-size: 16px;
@@ -45,6 +48,14 @@ $this->title = 'Ekipman Listesi';
 }
 
 .ekipman-mobile-list {
+    display: none;
+}
+
+.ekipman-mobile-summary {
+    display: none;
+}
+
+.ekipman-mobile-pager {
     display: none;
 }
 
@@ -89,7 +100,50 @@ $this->title = 'Ekipman Listesi';
     font-size: .82rem;
 }
 
+.ekipman-mobile-summary {
+    color: #fff;
+    font-weight: 700;
+    font-size: .92rem;
+}
+
+.ekipman-mobile-pager-inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: .45rem;
+    align-items: center;
+}
+
+.ekipman-mobile-page-status {
+    border: 1px solid #495057;
+    border-radius: 8px;
+    padding: .45rem .7rem;
+    color: #fff;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+    background: #1f2428;
+}
+
+.ekipman-mobile-pager-extra {
+    display: flex;
+    justify-content: center;
+    gap: .45rem;
+    margin-top: .45rem;
+}
+
 @media (max-width: 767.98px) {
+    .ekipman-action-desktop {
+        display: none;
+    }
+
+    .ekipman-action-mobile {
+        display: block;
+    }
+
+    .ekipman-action-mobile .dropdown-menu {
+        min-width: 240px;
+    }
+
     .ekipman-desktop-grid {
         display: none;
     }
@@ -98,32 +152,61 @@ $this->title = 'Ekipman Listesi';
         display: grid;
         gap: .55rem;
     }
+
+    .ekipman-mobile-summary {
+        display: block;
+    }
+
+    .ekipman-mobile-pager {
+        display: block;
+    }
 }
 </style>
 
 <h1><?= Html::encode($this->title) ?></h1>
 
-<p>
-    
+<div class="ekipman-action-desktop mb-3">
     <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
-    <?= Html::a('Yeni Ekle', ['create'], ['class' => 'btn btn-success']) ?>
-        <button type="button" class="btn btn-success ml-1" onclick="document.getElementById('ekipmanAktarPanel').style.display = document.getElementById('ekipmanAktarPanel').style.display==='none' ? 'block':'none'">
+        <?= Html::a('Yeni Ekle', ['create'], ['class' => 'btn btn-success']) ?>
+        <button type="button" class="btn btn-outline-warning ml-1" data-bs-toggle="collapse" data-bs-target="#ekipmanAktarPanel" aria-expanded="false" aria-controls="ekipmanAktarPanel">
             Toplu Ekipman Aktar
         </button>
-<?php endif; ?>
+    <?php endif; ?>
 
     <?php if (!Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin','editor'])): ?>
         <?= Html::a('Excel İndir', ['export-excel'], ['class' => 'btn btn-primary ml-1']) ?>
         <?= Html::a('PDF İndir', ['export-pdf'], ['class' => 'btn btn-danger ml-1']) ?>
-        <button type="button" class="btn btn-warning ml-1" onclick="document.getElementById('enerjiAktarPanel').style.display = document.getElementById('enerjiAktarPanel').style.display==='none' ? 'block':'none'">
+        <button type="button" class="btn btn-outline-warning ml-1" data-bs-toggle="collapse" data-bs-target="#enerjiAktarPanel" aria-expanded="false" aria-controls="enerjiAktarPanel">
             Enerji Kaynağı Toplu Aktar
         </button>
     <?php endif; ?>
-</p>
+</div>
+
+<?php if (!Yii::$app->user->isGuest && in_array(Yii::$app->user->identity->role, ['admin','editor'])): ?>
+    <div class="ekipman-action-mobile dropdown mb-3">
+        <button class="btn btn-outline-warning dropdown-toggle w-100" type="button" id="ekipmanMobileActions" data-bs-toggle="dropdown" aria-expanded="false">
+            Yönetim İşlemleri
+        </button>
+        <div class="dropdown-menu dropdown-menu-dark w-100" aria-labelledby="ekipmanMobileActions">
+            <?php if (Yii::$app->user->identity->role === 'admin'): ?>
+                <?= Html::a('Yeni Ekle', ['create'], ['class' => 'dropdown-item']) ?>
+                <button type="button" class="dropdown-item" data-bs-toggle="collapse" data-bs-target="#ekipmanAktarPanel" aria-controls="ekipmanAktarPanel">
+                    Toplu Ekipman Aktar
+                </button>
+            <?php endif; ?>
+            <?= Html::a('Excel İndir', ['export-excel'], ['class' => 'dropdown-item']) ?>
+            <?= Html::a('PDF İndir', ['export-pdf'], ['class' => 'dropdown-item']) ?>
+            <button type="button" class="dropdown-item" data-bs-toggle="collapse" data-bs-target="#enerjiAktarPanel" aria-controls="enerjiAktarPanel">
+                Enerji Kaynağı Toplu Aktar
+            </button>
+        </div>
+    </div>
+<?php endif; ?>
 
 <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
 <!-- Ekipman Excel/CSV Aktarım Paneli -->
-<div id="ekipmanAktarPanel" style="display:none;" class="card bg-dark border-secondary mb-3">
+<div id="ekipmanAktarPanel" class="collapse">
+<div class="card bg-dark border-secondary mb-3">
     <div class="card-body py-3">
         <div class="font-weight-bold mb-2">Toplu Ekipman Aktar</div>
         <p class="small text-muted mb-3">
@@ -137,10 +220,12 @@ $this->title = 'Ekipman Listesi';
         <?= Html::endForm() ?>
     </div>
 </div>
+</div>
 <?php endif; ?>
 
 <!-- Enerji Kaynağı CSV Aktarım Paneli -->
-<div id="enerjiAktarPanel" style="display:none;" class="card bg-dark border-secondary mb-3">
+<div id="enerjiAktarPanel" class="collapse">
+<div class="card bg-dark border-secondary mb-3">
     <div class="card-body py-3">
         <div class="font-weight-bold mb-2">Enerji Kaynağı Toplu Aktarım</div>
         <p class="small text-muted mb-3">CSV/TXT dosyası yükleyin. Format: <code>ekipman_id;enerji_kaynagi_id;salter_kodu;salter_akim</code> (noktalı virgül, virgül veya tab ayraç)<br>
@@ -151,6 +236,7 @@ $this->title = 'Ekipman Listesi';
             <a href="#" class="btn btn-outline-info btn-sm ml-2 mb-2" id="ornekCsvIndir">Örnek CSV</a>
         <?= Html::endForm() ?>
     </div>
+</div>
 </div>
 <script>
 document.getElementById('ornekCsvIndir') && document.getElementById('ornekCsvIndir').addEventListener('click', function(e) {
@@ -213,6 +299,16 @@ document.getElementById('ornekEkipmanCsvIndir') && document.getElementById('orne
 <?= \app\widgets\PageSizeWidget::widget() ?>
 
 <?php \yii\widgets\Pjax::begin(['id' => 'ekipman-pjax', 'enablePushState' => false]); ?>
+    <?php
+    $pagination = $dataProvider->getPagination();
+    $totalCount = $dataProvider->getTotalCount();
+    $currentCount = count($dataProvider->getModels());
+    $pageNumber = $pagination === false ? 1 : $pagination->getPage() + 1;
+    $pageCount = $pagination === false ? 1 : max(1, $pagination->getPageCount());
+    $firstItem = $totalCount === 0 || $pagination === false ? ($totalCount === 0 ? 0 : 1) : $pagination->getOffset() + 1;
+    $lastItem = $totalCount === 0 ? 0 : $firstItem + $currentCount - 1;
+    $summaryText = Yii::$app->formatter->asInteger($totalCount) . ' öğenin ' . Yii::$app->formatter->asInteger($firstItem) . '-' . Yii::$app->formatter->asInteger($lastItem) . ' arası gösteriliyor.';
+    ?>
     <div class="ekipman-desktop-grid">
     <?= GridView::widget([
         'id' => 'ekipman-grid',
@@ -262,6 +358,10 @@ document.getElementById('ornekEkipmanCsvIndir') && document.getElementById('orne
     ]); ?>
     </div>
 
+    <div class="ekipman-mobile-summary mb-2">
+        <?= Html::encode($summaryText) ?>
+    </div>
+
     <div class="ekipman-mobile-list">
         <?php foreach ($dataProvider->getModels() as $model): ?>
             <?= Html::a(
@@ -278,6 +378,20 @@ document.getElementById('ornekEkipmanCsvIndir') && document.getElementById('orne
                 ['class' => 'ekipman-mobile-card p-2']
             ) ?>
         <?php endforeach; ?>
+    </div>
+
+    <div class="ekipman-mobile-pager mt-3">
+        <?php if ($pagination !== false && $pageCount > 1): ?>
+            <div class="ekipman-mobile-pager-inner">
+                <?= $pageNumber > 1 ? Html::a('Önceki', $pagination->createUrl($pageNumber - 2), ['class' => 'btn btn-outline-primary btn-sm']) : Html::tag('span', 'Önceki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+                <div class="ekipman-mobile-page-status">Sayfa <?= Html::encode((string)$pageNumber) ?> / <?= Html::encode((string)$pageCount) ?></div>
+                <?= $pageNumber < $pageCount ? Html::a('Sonraki', $pagination->createUrl($pageNumber), ['class' => 'btn btn-outline-primary btn-sm']) : Html::tag('span', 'Sonraki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+            </div>
+            <div class="ekipman-mobile-pager-extra">
+                <?= $pageNumber > 1 ? Html::a('İlk sayfa', $pagination->createUrl(0), ['class' => 'btn btn-outline-secondary btn-sm']) : '' ?>
+                <?= $pageNumber < $pageCount ? Html::a('Son sayfa', $pagination->createUrl($pageCount - 1), ['class' => 'btn btn-outline-secondary btn-sm']) : '' ?>
+            </div>
+        <?php endif; ?>
     </div>
 <?php \yii\widgets\Pjax::end(); ?>
 

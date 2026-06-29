@@ -262,6 +262,14 @@ public function actionExportPdf()
         ]);
 
         $todayStr = date('Y-m-d');
+        $activePeriyodikKontroller = PeriyodikKontrol::find()
+            ->alias('pk')
+            ->where(['pk.ekipman_id' => $model->id])
+            ->andWhere(['IS NOT', 'pk.gelecek_kontrol_tarihi', null])
+            ->andWhere($latestPeriyodikCondition)
+            ->orderBy(['pk.gelecek_kontrol_tarihi' => SORT_ASC])
+            ->all();
+
         $nextPeriyodikKontrol = PeriyodikKontrol::find()
             ->alias('pk')
             ->where(['pk.ekipman_id' => $model->id])
@@ -307,6 +315,7 @@ public function actionExportPdf()
             'planliBakimDataProvider' => $planliBakimDataProvider,
             'nextBakimlar' => $nextBakimlar,
             'periyodikKontrolDataProvider' => $periyodikKontrolDataProvider,
+            'activePeriyodikKontroller' => $activePeriyodikKontroller,
             'bakimTakipDataProvider' => $bakimTakipDataProvider,
             'arizaTakipDataProvider' => $arizaTakipDataProvider,
             'nextPeriyodikKontrol' => $nextPeriyodikKontrol,
@@ -2102,7 +2111,7 @@ public function actionSog5Tuketim()
 
     private function latestPeriyodikKontrolCondition(string $alias): string
     {
-        return "NOT EXISTS (
+        return "NOT (" . $this->obsoleteTopraklamaKontrolCondition($alias) . ") AND NOT EXISTS (
             SELECT 1
             FROM periyodik_kontrol pk_newer
             WHERE BINARY pk_newer.ekipman_id = BINARY {$alias}.ekipman_id
@@ -2121,6 +2130,21 @@ public function actionSog5Tuketim()
                   )
               )
         )";
+    }
+
+    private function obsoleteTopraklamaKontrolCondition(string $alias): string
+    {
+        return "{$alias}.cihaz_adi LIKE '%TOPRAKLAMA%'
+            AND EXISTS (
+                SELECT 1
+                FROM periyodik_kontrol pk_panel_newer
+                WHERE BINARY pk_panel_newer.ekipman_id = BINARY {$alias}.ekipman_id
+                  AND pk_panel_newer.id <> {$alias}.id
+                  AND pk_panel_newer.cihaz_adi NOT LIKE '%TOPRAKLAMA%'
+                  AND pk_panel_newer.son_kontrol_tarihi IS NOT NULL
+                  AND {$alias}.son_kontrol_tarihi IS NOT NULL
+                  AND pk_panel_newer.son_kontrol_tarihi > {$alias}.son_kontrol_tarihi
+            )";
     }
 
 }

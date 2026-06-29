@@ -108,7 +108,9 @@ class BakimTakip extends \yii\db\ActiveRecord
     {
         parent::afterSave($insert, $changedAttributes);
 
-        // Çoklu ekipman ilişkisini pivot tabloda senkronize et
+        // Çoklu ekipman ilişkisini pivot tabloda senkronize et.
+        // Planlı bakım bağlantıları controller tarafında ayrıca yönetilir; burada silinirse
+        // bakım tarihi düzeltmelerinde bağlı planlı bakım satırı güncellenemez.
         BakimTakipEkipman::deleteAll(['bakim_id' => $this->id]);
 
         if (is_array($this->ekipmanIds)) {

@@ -16,6 +16,9 @@ $users = ArrayHelper::map(User::find()
     ->where(['in', 'role', ['user', 'editor']])
     ->orderBy(['username' => SORT_ASC])
     ->all(), 'username', 'username');
+
+$canChooseBakimType = !Yii::$app->user->isGuest
+    && in_array(Yii::$app->user->identity->role, ['admin', 'editor'], true);
 ?>
 <?php
 $this->registerCss('
@@ -42,7 +45,7 @@ $this->registerCss('
 <div class="bakim-takip-form">
 
     <?php
-    // Yeni kayıt için varsayılanlar: BAKIM_GENEL ve PERIYODIK_PLANLI
+    // Yeni kayıtlar varsayılan GENEL olarak açılır; admin/editor isterse değiştirebilir.
     if ($model->isNewRecord) {
         if (!$model->BAKIM_GENEL) {
             $model->BAKIM_GENEL = 'GENEL';
@@ -50,14 +53,40 @@ $this->registerCss('
         if (!$model->PERIYODIK_PLANLI) {
             $model->PERIYODIK_PLANLI = 'GENEL';
         }
+        if (!$model->TARIH) {
+            $model->TARIH = date('Y-m-d');
+        }
     }
     $form = ActiveForm::begin();
     ?>
 
     <?= $form->errorSummary($model, ['class' => 'alert alert-danger']) ?>
 
-    <?= Html::activeHiddenInput($model, 'BAKIM_GENEL', ['value' => 'GENEL']) ?>
-    <?= Html::activeHiddenInput($model, 'PERIYODIK_PLANLI', ['value' => 'GENEL']) ?>
+    <?php if ($canChooseBakimType): ?>
+        <div class="row">
+            <div class="col-md-6">
+                <?= $form->field($model, 'BAKIM_GENEL')->dropDownList([
+                    'BAKIM' => 'BAKIM',
+                    'GENEL' => 'GENEL',
+                ], ['prompt' => 'Seçiniz...']) ?>
+            </div>
+            <div class="col-md-6">
+                <?= $form->field($model, 'PERIYODIK_PLANLI')->dropDownList([
+                    'GENEL' => 'GENEL',
+                    'PERIYODIK' => 'PERİYODİK',
+                    'PLANLI' => 'PLANLI',
+                    'PLANLI: 1 Ay' => 'Planlı Bakım - 1 Aylık',
+                    'PLANLI: 3 Ay' => 'Planlı Bakım - 3 Aylık',
+                    'PLANLI: 6 Ay' => 'Planlı Bakım - 6 Aylık',
+                    'PLANLI: 1 Yıl' => 'Planlı Bakım - 1 Yıllık',
+                    'PLANLI TOPLU BAKIM' => 'Planlı Bakım - Toplu',
+                ], ['prompt' => 'Seçiniz...']) ?>
+            </div>
+        </div>
+    <?php else: ?>
+        <?= Html::activeHiddenInput($model, 'BAKIM_GENEL', ['value' => 'GENEL']) ?>
+        <?= Html::activeHiddenInput($model, 'PERIYODIK_PLANLI', ['value' => 'GENEL']) ?>
+    <?php endif; ?>
 
     <div class="row">
         <div class="col-md-6">
@@ -209,7 +238,10 @@ $this->registerCss('
         ])
         ->hint('Ana sayfa planlı çoklu girişle uyumlu: çoklu planlı kayıtta ekipmanlar burada otomatik listelenir; yazdığınız metin ek not olarak korunur.') ?>
 
-    <?= $this->render('_ekipman_modal', ['ekipmanGruplu' => $ekipmanGruplu]) ?>
+    <?= $this->render('_ekipman_modal', [
+        'ekipmanGruplu' => $ekipmanGruplu,
+        'selectedIds' => $selectedIds,
+    ]) ?>
 
         <?php 
         // İşi Yapanlar - Modal çoklu seçim (sadece label + error)

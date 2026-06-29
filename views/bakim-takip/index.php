@@ -86,6 +86,8 @@ $this->registerCss(<<<CSS
 
 .bakim-desktop-grid {}
 .bakim-mobile-list { display: none; }
+.bakim-mobile-summary { display: none; }
+.bakim-mobile-pager { display: none; }
 .bakim-mobile-card {
     display: block;
     color: #fff;
@@ -121,12 +123,41 @@ $this->registerCss(<<<CSS
     font-size: .86rem;
     white-space: pre-line;
 }
+.bakim-mobile-summary {
+    color: #fff;
+    font-weight: 700;
+    font-size: .92rem;
+}
+.bakim-mobile-pager-inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: .45rem;
+    align-items: center;
+}
+.bakim-mobile-page-status {
+    border: 1px solid #495057;
+    border-radius: 8px;
+    padding: .45rem .7rem;
+    color: #fff;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+    background: #1f2428;
+}
+.bakim-mobile-pager-extra {
+    display: flex;
+    justify-content: center;
+    gap: .45rem;
+    margin-top: .45rem;
+}
 @media (max-width: 767.98px) {
     .bakim-desktop-grid { display: none; }
     .bakim-mobile-list {
         display: grid;
         gap: .55rem;
     }
+    .bakim-mobile-summary { display: block; }
+    .bakim-mobile-pager { display: block; }
 }
 CSS);
 
@@ -250,7 +281,7 @@ $renderYapilanIs = static function (BakimTakip $model): string {
         }
         ?>
         <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
-            <button type="button" class="btn btn-success ml-1" onclick="document.getElementById('bakimAktarPanel').style.display = document.getElementById('bakimAktarPanel').style.display==='none' ? 'block':'none'">
+            <button type="button" class="btn btn-outline-warning ml-1" data-bs-toggle="collapse" data-bs-target="#bakimAktarPanel" aria-expanded="false" aria-controls="bakimAktarPanel">
                 Toplu Bakım Aktar
             </button>
         <?php endif; ?>
@@ -267,7 +298,8 @@ $renderYapilanIs = static function (BakimTakip $model): string {
 
     </p>
     <?php if (!Yii::$app->user->isGuest && Yii::$app->user->identity->role === 'admin'): ?>
-    <div id="bakimAktarPanel" style="display:none;" class="card bg-dark border-secondary mb-3">
+    <div id="bakimAktarPanel" class="collapse">
+    <div class="card bg-dark border-secondary mb-3">
         <div class="card-body py-3">
             <div class="font-weight-bold mb-2">Toplu Bakım Aktar</div>
             <?= Html::beginForm(['bakim-takip/toplu-aktar'], 'post', ['enctype' => 'multipart/form-data', 'class' => 'd-flex align-items-center flex-wrap mb-0']) ?>
@@ -276,6 +308,7 @@ $renderYapilanIs = static function (BakimTakip $model): string {
                 <a href="#" class="btn btn-outline-info btn-sm ml-2 mb-2" id="ornekBakimCsvIndir">Örnek CSV</a>
             <?= Html::endForm() ?>
         </div>
+    </div>
     </div>
     <script>
     document.getElementById('ornekBakimCsvIndir') && document.getElementById('ornekBakimCsvIndir').addEventListener('click', function(e) {
@@ -295,6 +328,16 @@ $renderYapilanIs = static function (BakimTakip $model): string {
     <?= \app\widgets\PageSizeWidget::widget() ?>
 
     <?php Pjax::begin(['id' => 'bakimtakip-pjax', 'enablePushState' => false]); ?>
+    <?php
+    $pagination = $dataProvider->getPagination();
+    $totalCount = $dataProvider->getTotalCount();
+    $currentCount = count($dataProvider->getModels());
+    $pageNumber = $pagination === false ? 1 : $pagination->getPage() + 1;
+    $pageCount = $pagination === false ? 1 : max(1, $pagination->getPageCount());
+    $firstItem = $totalCount === 0 || $pagination === false ? ($totalCount === 0 ? 0 : 1) : $pagination->getOffset() + 1;
+    $lastItem = $totalCount === 0 ? 0 : $firstItem + $currentCount - 1;
+    $summaryText = Yii::$app->formatter->asInteger($totalCount) . ' öğenin ' . Yii::$app->formatter->asInteger($firstItem) . '-' . Yii::$app->formatter->asInteger($lastItem) . ' arası gösteriliyor.';
+    ?>
 
     <div class="bakim-desktop-grid">
     <?= GridView::widget([
@@ -365,6 +408,10 @@ $renderYapilanIs = static function (BakimTakip $model): string {
     ]); ?>
     </div>
 
+    <div class="bakim-mobile-summary mb-2">
+        <?= Html::encode($summaryText) ?>
+    </div>
+
     <div class="bakim-mobile-list">
         <?php foreach ($dataProvider->getModels() as $model): ?>
             <?php
@@ -382,6 +429,30 @@ $renderYapilanIs = static function (BakimTakip $model): string {
                 ['class' => 'bakim-mobile-card p-2']
             ) ?>
         <?php endforeach; ?>
+    </div>
+
+    <div class="bakim-mobile-pager mt-3">
+        <?php if ($pagination !== false && $pageCount > 1): ?>
+            <div class="bakim-mobile-pager-inner">
+                <?= $pageNumber > 1
+                    ? Html::a('Önceki', $pagination->createUrl($pageNumber - 2), ['class' => 'btn btn-outline-primary btn-sm'])
+                    : Html::tag('span', 'Önceki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+                <div class="bakim-mobile-page-status">
+                    Sayfa <?= Html::encode((string)$pageNumber) ?> / <?= Html::encode((string)$pageCount) ?>
+                </div>
+                <?= $pageNumber < $pageCount
+                    ? Html::a('Sonraki', $pagination->createUrl($pageNumber), ['class' => 'btn btn-outline-primary btn-sm'])
+                    : Html::tag('span', 'Sonraki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+            </div>
+            <div class="bakim-mobile-pager-extra">
+                <?= $pageNumber > 1
+                    ? Html::a('İlk sayfa', $pagination->createUrl(0), ['class' => 'btn btn-outline-secondary btn-sm'])
+                    : '' ?>
+                <?= $pageNumber < $pageCount
+                    ? Html::a('Son sayfa', $pagination->createUrl($pageCount - 1), ['class' => 'btn btn-outline-secondary btn-sm'])
+                    : '' ?>
+            </div>
+        <?php endif; ?>
     </div>
 
 

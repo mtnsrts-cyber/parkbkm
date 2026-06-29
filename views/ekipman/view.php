@@ -480,61 +480,64 @@ $beslemeKonumMarkersJson = json_encode($beslemeKonumMarkers, JSON_UNESCAPED_UNIC
 
             <!-- Periyodik Kontroller -->
             <div class="mt-4">
-                <div class="d-flex align-items-center mb-2">
+                <div class="d-flex align-items-start mb-2 flex-wrap">
                     <h5 class="mb-0">Periyodik Kontroller</h5>
-                    <?php if (isset($nextPeriyodikKontrol) && $nextPeriyodikKontrol): ?>
-                        <?php
-                        try {
-                            $gelecek = new \DateTime($nextPeriyodikKontrol->gelecek_kontrol_tarihi);
-                            $today = new \DateTime('today');
+                    <?php $dueBarKontroller = $activePeriyodikKontroller ?? (isset($nextPeriyodikKontrol) && $nextPeriyodikKontrol ? [$nextPeriyodikKontrol] : []); ?>
+                    <?php if (!empty($dueBarKontroller)): ?>
+                        <div class="ml-3 d-flex flex-column" style="gap:4px; min-width:260px; max-width:520px;">
+                            <?php foreach ($dueBarKontroller as $dueKontrol): ?>
+                                <?php
+                                try {
+                                    $gelecek = new \DateTime($dueKontrol->gelecek_kontrol_tarihi);
+                                    $today = new \DateTime('today');
 
-                            $son = null;
-                            if (!empty($nextPeriyodikKontrol->son_kontrol_tarihi)) {
-                                $son = new \DateTime($nextPeriyodikKontrol->son_kontrol_tarihi);
-                            }
+                                    $son = null;
+                                    if (!empty($dueKontrol->son_kontrol_tarihi)) {
+                                        $son = new \DateTime($dueKontrol->son_kontrol_tarihi);
+                                    }
 
-                            $graceEnd = (clone $gelecek)->modify('+' . $periyodikGraceDays . ' days');
+                                    $graceEnd = (clone $gelecek)->modify('+' . $periyodikGraceDays . ' days');
 
-                            if ($today > $graceEnd) {
-                                $overdueDays = $graceEnd->diff($today)->days;
-                                $percent = 100;
-                                $barClass = 'bg-danger';
-                                $label = 'GECİKMİŞ: ' . $overdueDays . ' gün';
-                            } elseif ($today > $gelecek) {
-                                $graceRemainingDays = $today->diff($graceEnd)->days;
-                                $percent = max(5, min(100, round((($periyodikGraceDays - $graceRemainingDays) / $periyodikGraceDays) * 100)));
-                                $barClass = 'bg-warning';
-                                $label = 'Tolerans: ' . $graceRemainingDays . ' gün';
-                            } else {
-                                if ($son) {
-                                    $totalDays = max(1, $son->diff($gelecek)->days);
-                                } else {
-                                    $totalDays = max(1, $today->diff($gelecek)->days);
+                                    if ($today > $graceEnd) {
+                                        $overdueDays = $graceEnd->diff($today)->days;
+                                        $percent = 100;
+                                        $barClass = 'bg-danger';
+                                        $label = 'GECİKMİŞ: ' . $overdueDays . ' gün';
+                                    } elseif ($today > $gelecek) {
+                                        $graceRemainingDays = $today->diff($graceEnd)->days;
+                                        $percent = max(5, min(100, round((($periyodikGraceDays - $graceRemainingDays) / $periyodikGraceDays) * 100)));
+                                        $barClass = 'bg-warning';
+                                        $label = 'Tolerans: ' . $graceRemainingDays . ' gün';
+                                    } else {
+                                        if ($son) {
+                                            $totalDays = max(1, $son->diff($gelecek)->days);
+                                        } else {
+                                            $totalDays = max(1, $today->diff($gelecek)->days);
+                                        }
+
+                                        $remainingDays = $today->diff($gelecek)->days;
+                                        $completedDays = max(0, $totalDays - $remainingDays);
+                                        $percent = max(5, min(100, round($completedDays * 100 / $totalDays)));
+                                        $barClass = $remainingDays <= 30 ? 'bg-warning' : 'bg-success';
+                                        $label = $remainingDays . ' gün kaldı';
+                                    }
+                                } catch (\Exception $e) {
+                                    $percent = 0;
+                                    $barClass = 'bg-secondary';
+                                    $label = 'Tarih hesaplanamadı';
                                 }
-
-                                $remainingDays = $today->diff($gelecek)->days;
-                                $completedDays = max(0, $totalDays - $remainingDays);
-                                $percent = max(5, min(100, round($completedDays * 100 / $totalDays)));
-
-                                if ($remainingDays <= 30) {
-                                    $barClass = 'bg-warning';
-                                } else {
-                                    $barClass = 'bg-success';
+                                $cihazLabel = trim((string)$dueKontrol->cihaz_adi);
+                                if (mb_strlen($cihazLabel) > 34) {
+                                    $cihazLabel = mb_substr($cihazLabel, 0, 31) . '...';
                                 }
-
-                                $label = $remainingDays . ' gün kaldı';
-                            }
-                        } catch (\Exception $e) {
-                            $percent = 0;
-                            $barClass = 'bg-secondary';
-                            $label = 'Tarih hesaplanamadı';
-                        }
-                        ?>
-                        <div class="progress position-relative ml-3" style="width:260px; height: 22px;">
-                            <div class="progress-bar <?= $barClass ?>" role="progressbar" style="width: <?= $percent ?>%; opacity: 0.4;" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100"></div>
-                            <span class="position-absolute w-100 text-center small" style="color: #fff; line-height: 22px;">
-                                <?= Html::encode($label) ?>
-                            </span>
+                                ?>
+                                <div class="progress position-relative" style="width:100%; height: 22px;">
+                                    <div class="progress-bar <?= $barClass ?>" role="progressbar" style="width: <?= $percent ?>%; opacity: 0.4;" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100"></div>
+                                    <span class="position-absolute w-100 text-center small px-1" style="color: #fff; line-height: 22px;">
+                                        <?= Html::encode($cihazLabel !== '' && count($dueBarKontroller) > 1 ? $cihazLabel . ' | ' . $label : $label) ?>
+                                    </span>
+                                </div>
+                            <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
                 </div>

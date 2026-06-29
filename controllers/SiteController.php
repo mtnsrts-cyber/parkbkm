@@ -1300,7 +1300,7 @@ private function activePeriyodikKontrolEkipmanCondition(string $alias): string
 
 private function latestPeriyodikKontrolCondition(string $alias): string
 {
-    return "NOT EXISTS (
+    return "NOT (" . $this->obsoleteTopraklamaKontrolCondition($alias) . ") AND NOT EXISTS (
         SELECT 1
         FROM periyodik_kontrol pk_newer
         WHERE BINARY pk_newer.ekipman_id = BINARY {$alias}.ekipman_id
@@ -1319,6 +1319,21 @@ private function latestPeriyodikKontrolCondition(string $alias): string
               )
           )
     )";
+}
+
+private function obsoleteTopraklamaKontrolCondition(string $alias): string
+{
+    return "{$alias}.cihaz_adi LIKE '%TOPRAKLAMA%'
+        AND EXISTS (
+            SELECT 1
+            FROM periyodik_kontrol pk_panel_newer
+            WHERE BINARY pk_panel_newer.ekipman_id = BINARY {$alias}.ekipman_id
+              AND pk_panel_newer.id <> {$alias}.id
+              AND pk_panel_newer.cihaz_adi NOT LIKE '%TOPRAKLAMA%'
+              AND pk_panel_newer.son_kontrol_tarihi IS NOT NULL
+              AND {$alias}.son_kontrol_tarihi IS NOT NULL
+              AND pk_panel_newer.son_kontrol_tarihi > {$alias}.son_kontrol_tarihi
+        )";
 }
 
 

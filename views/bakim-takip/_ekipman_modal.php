@@ -4,6 +4,9 @@ use yii\helpers\Html;
 
 /** @var yii\web\View $this */
 /** @var array $ekipmanGruplu */
+/** @var array $selectedIds */
+
+$selectedIds = array_map('strval', $selectedIds ?? []);
 ?>
 
 <div class="modal fade" id="bakimEkipmanModal" tabindex="-1" aria-labelledby="bakimEkipmanLabel" aria-hidden="true">
@@ -40,7 +43,7 @@ use yii\helpers\Html;
                                             <div class="list-group mb-2">
                                                 <?php foreach ($list as $e): ?>
                                                     <label class="list-group-item">
-                                                        <input class="form-check-input me-1 ekipman-checkbox" type="checkbox" name="BakimTakip[ekipmanIds][]" value="<?= Html::encode($e->id) ?>" data-cins="<?= Html::encode($cins) ?>" data-tur="<?= Html::encode($tur) ?>" data-yeri="<?= Html::encode($e->EKIPMAN_YERI) ?>">
+                                                        <input class="form-check-input me-1 ekipman-checkbox" type="checkbox" name="BakimTakip[ekipmanIds][]" value="<?= Html::encode($e->id) ?>" data-cins="<?= Html::encode($cins) ?>" data-tur="<?= Html::encode($tur) ?>" data-yeri="<?= Html::encode($e->EKIPMAN_YERI) ?>" <?= in_array((string)$e->id, $selectedIds, true) ? 'checked' : '' ?>>
                                                         <?= Html::encode($e->id . ' - ' . $e->MALZEMENIN_TANIMI) ?>
                                                         <?php if ($e->EKIPMAN_YERI): ?>
                                                             <span class="text-muted small">(<?= Html::encode($e->EKIPMAN_YERI) ?>)</span>

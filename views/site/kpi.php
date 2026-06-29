@@ -13,7 +13,6 @@ use yii\helpers\Html;
 /** @var int $periyodikYaklasan90Adet */
 
 $this->title = 'KPI Paneli';
-$this->params['breadcrumbs'][] = ['label' => 'Anasayfa', 'url' => ['/site/index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
 

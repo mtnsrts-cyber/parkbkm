@@ -79,6 +79,8 @@ $renderKalanSure = static function ($model): string {
 <style>
 .periyodik-desktop-grid {}
 .periyodik-mobile-list { display: none; }
+.periyodik-mobile-summary { display: none; }
+.periyodik-mobile-pager { display: none; }
 .periyodik-mobile-card {
     display: block;
     color: #fff;
@@ -111,12 +113,41 @@ $renderKalanSure = static function ($model): string {
 }
 .periyodik-mobile-report a { color: #ffc107; font-weight: 800; }
 .periyodik-mobile-card .periyodik-due-bar { height: 22px; }
+.periyodik-mobile-summary {
+    color: #fff;
+    font-weight: 700;
+    font-size: .92rem;
+}
+.periyodik-mobile-pager-inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: .45rem;
+    align-items: center;
+}
+.periyodik-mobile-page-status {
+    border: 1px solid #495057;
+    border-radius: 8px;
+    padding: .45rem .7rem;
+    color: #fff;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+    background: #1f2428;
+}
+.periyodik-mobile-pager-extra {
+    display: flex;
+    justify-content: center;
+    gap: .45rem;
+    margin-top: .45rem;
+}
 @media (max-width: 767.98px) {
     .periyodik-desktop-grid { display: none; }
     .periyodik-mobile-list {
         display: grid;
         gap: .55rem;
     }
+    .periyodik-mobile-summary { display: block; }
+    .periyodik-mobile-pager { display: block; }
 }
 </style>
 
@@ -125,10 +156,11 @@ $renderKalanSure = static function ($model): string {
     <h1><?= Html::encode($this->title) ?></h1>
 
     <?php if ($isAdmin): ?>
-        <button type="button" class="btn btn-outline-warning mb-2" id="periyodik-admin-toggle">
+        <button type="button" class="btn btn-outline-warning mb-2" data-bs-toggle="collapse" data-bs-target="#periyodik-admin-panel" aria-expanded="false" aria-controls="periyodik-admin-panel">
             Yönetim Paneli
         </button>
-        <div class="card bg-dark border-secondary mb-3" id="periyodik-admin-panel" style="display:none;">
+        <div class="collapse" id="periyodik-admin-panel">
+        <div class="card bg-dark border-secondary mb-3">
             <div class="card-body py-3">
                 <?= Html::beginForm(['site/periyodik-kontrol-import'], 'post', ['enctype' => 'multipart/form-data', 'data-pjax' => 0, 'class' => 'row g-2 align-items-end']) ?>
                     <div class="col-md-6">
@@ -161,6 +193,7 @@ $renderKalanSure = static function ($model): string {
                     <div class="col-12 small text-muted" id="periyodik-rapor-upload-summary"></div>
                 <?= Html::endForm() ?>
             </div>
+        </div>
         </div>
     <?php endif; ?>
 
@@ -197,6 +230,16 @@ $renderKalanSure = static function ($model): string {
     <?= \app\widgets\PageSizeWidget::widget() ?>
 
     <?php Pjax::begin(['id' => 'periyodik-pjax', 'enablePushState' => false]); ?>
+    <?php
+    $pagination = $dataProvider->getPagination();
+    $totalCount = $dataProvider->getTotalCount();
+    $currentCount = count($dataProvider->getModels());
+    $pageNumber = $pagination === false ? 1 : $pagination->getPage() + 1;
+    $pageCount = $pagination === false ? 1 : max(1, $pagination->getPageCount());
+    $firstItem = $totalCount === 0 || $pagination === false ? ($totalCount === 0 ? 0 : 1) : $pagination->getOffset() + 1;
+    $lastItem = $totalCount === 0 ? 0 : $firstItem + $currentCount - 1;
+    $summaryText = Yii::$app->formatter->asInteger($totalCount) . ' öğenin ' . Yii::$app->formatter->asInteger($firstItem) . '-' . Yii::$app->formatter->asInteger($lastItem) . ' arası gösteriliyor.';
+    ?>
 
     <div class="periyodik-desktop-grid">
     <?= GridView::widget([
@@ -260,6 +303,10 @@ $renderKalanSure = static function ($model): string {
     ]) ?>
     </div>
 
+    <div class="periyodik-mobile-summary mb-2">
+        <?= Html::encode($summaryText) ?>
+    </div>
+
     <div class="periyodik-mobile-list">
         <?php foreach ($dataProvider->getModels() as $model): ?>
             <div class="periyodik-mobile-card p-2">
@@ -284,20 +331,26 @@ $renderKalanSure = static function ($model): string {
         <?php endforeach; ?>
     </div>
 
+    <div class="periyodik-mobile-pager mt-3">
+        <?php if ($pagination !== false && $pageCount > 1): ?>
+            <div class="periyodik-mobile-pager-inner">
+                <?= $pageNumber > 1 ? Html::a('Önceki', $pagination->createUrl($pageNumber - 2), ['class' => 'btn btn-outline-primary btn-sm']) : Html::tag('span', 'Önceki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+                <div class="periyodik-mobile-page-status">Sayfa <?= Html::encode((string)$pageNumber) ?> / <?= Html::encode((string)$pageCount) ?></div>
+                <?= $pageNumber < $pageCount ? Html::a('Sonraki', $pagination->createUrl($pageNumber), ['class' => 'btn btn-outline-primary btn-sm']) : Html::tag('span', 'Sonraki', ['class' => 'btn btn-outline-secondary btn-sm disabled']) ?>
+            </div>
+            <div class="periyodik-mobile-pager-extra">
+                <?= $pageNumber > 1 ? Html::a('İlk sayfa', $pagination->createUrl(0), ['class' => 'btn btn-outline-secondary btn-sm']) : '' ?>
+                <?= $pageNumber < $pageCount ? Html::a('Son sayfa', $pagination->createUrl($pageCount - 1), ['class' => 'btn btn-outline-secondary btn-sm']) : '' ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
     <?php Pjax::end(); ?>
 
 </div>
 
 <script>
 (function () {
-    var adminToggle = document.getElementById('periyodik-admin-toggle');
-    var adminPanel = document.getElementById('periyodik-admin-panel');
-    if (adminToggle && adminPanel) {
-        adminToggle.addEventListener('click', function () {
-            adminPanel.style.display = adminPanel.style.display === 'none' ? 'block' : 'none';
-        });
-    }
-
     var raporInput = document.getElementById('periyodik_raporlar');
     var raporWarning = document.getElementById('periyodik-rapor-upload-warning');
     var raporSummary = document.getElementById('periyodik-rapor-upload-summary');
